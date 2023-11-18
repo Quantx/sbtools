@@ -1,8 +1,15 @@
 binarize/binarize
+binarize/binarize.exe
 sbengine/sbengine
+sbengine/sbengine.exe
 sbmodel/sbmodel
+sbmodel/sbmodel.exe
 sbstage/sbstage
+sbstate/sbstage.exe
 sbterrain/sbterrain
+sbterrain/sbterrain.exe
 sbtexture/sbtexture
+sbtexture/sbtexture.exe
 segment/segment
+segment/segment.exe
 sbtools.zip
