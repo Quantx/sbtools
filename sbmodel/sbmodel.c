@@ -15,6 +15,8 @@
 #define FORMAT_XBO 0x152
 #define FORMAT_SHA 0x12
 
+char path[256];
+
 const unsigned int verts_stride = 8 * sizeof(float) + 8 * sizeof(uint8_t);
 const float scale_factor = 256.0f;
 
@@ -34,31 +36,25 @@ struct primative {
     float max[3];
     
     float pos[3];
-    float dir[4];
+    float dir[3];
 };
 
 char * progname;
 
-/*
-void rotate(float pos[3], float dir[3]) {
-    float a, b;
+void euler2quat(float quat[4], float euler[3]) {
+    // Conver from Euler to Quaternion
+    double cx = cos(euler[0] * 0.5);
+    double sx = sin(euler[0] * 0.5);
+    double cy = cos(euler[1] * 0.5);
+    double sy = sin(euler[1] * 0.5);
+    double cz = cos(euler[2] * 0.5);
+    double sz = sin(euler[2] * 0.5);
     
-    // X-axis rotation
-    a = pos[1]; b = pos[2];
-    pos[1] = a * cos(dir[0]) - b * sin(dir[0]);
-    pos[2] = a * sin(dir[0]) + b * cos(dir[0]);
-    
-    // Y-axis rotation
-    a = pos[0]; b = pos[2];
-    pos[0] = a *  cos(dir[1]) + b * sin(dir[1]);
-    pos[2] = a * -sin(dir[1]) + b * cos(dir[1]);
-    
-    // Z-axis rotation
-    a = pos[0]; b = pos[1];
-    pos[0] = a * cos(dir[2]) - b * sin(dir[2]);
-    pos[1] = a * sin(dir[2]) + b * cos(dir[2]);
+    quat[0] = sx * cy * cz - cx * sy * sz; // X
+    quat[1] = cx * sy * cz + sx * cy * sz; // Y
+    quat[2] = cx * cy * sz - sx * sy * cz; // Z
+    quat[3] = cx * cy * cz + sx * sy * sz; // W
 }
-*/
 
 int main(int argc, char ** argv) {
     progname = *argv++; argc--;
@@ -66,20 +62,29 @@ int main(int argc, char ** argv) {
     printf("SB Model Tool - By QuantX\n");
 
     if (!argc) {
-        fprintf(stderr, "Please specify a sb model file: %s <path/example.sbmodel>\n", progname);
+        fprintf(stderr, "Please specify an XBO model file: %s <path/example.xbo>\n", progname);
         return 1;
     }
     
-    char * path = *argv++; argc--;
+    strncpy(path, *argv, sizeof(path));
+    argv++; argc--;
+    
     
     FILE * sbmdl = fopen(path, "rb");
     if (!sbmdl) {
-        fprintf(stderr, "Failed to open sb model file: %s\n", path);
+        fprintf(stderr, "Failed to open XBO file: %s\n", path);
         return 1;
     }
     
     // Get position of index table
-    fseek(sbmdl, 24, SEEK_SET);
+    fseek(sbmdl, 8, SEEK_SET);
+    
+    struct buffer nodespecial_section;
+    fread(&nodespecial_section, sizeof(struct buffer), 1, sbmdl);
+    
+    struct buffer nodeid_section;
+    fread(&nodeid_section, sizeof(struct buffer), 1, sbmdl);
+    
     struct buffer index_section;
     fread(&index_section, sizeof(struct buffer), 1, sbmdl);
     
@@ -91,12 +96,15 @@ int main(int argc, char ** argv) {
     
     uint8_t mesh_count = node_count - 1;
     
-    fseek(sbmdl, 2, SEEK_CUR);
+    uint16_t header_size;
+    fread(&header_size, sizeof(uint16_t), 1, sbmdl);
     
-    // Check the magic numbers
+    uint32_t extra;
+    fread(&extra, sizeof(uint32_t), 1, sbmdl);
+    if (extra != 0) printf("Extra data is present at %08X + MODEL_HEADER_OFFSET = %08X\n", extra, extra + MODEL_HEADER_OFFSET);
+
+    // Check the magic numbers    
     uint32_t magic;
-    fread(&magic, sizeof(uint32_t), 1, sbmdl);
-    if (magic != 0) printf("Magic 0x54 was %08X\n", magic);
     fread(&magic, sizeof(uint32_t), 1, sbmdl);
     if (magic != 8) {
         fprintf(stderr, "Magic 0x58 was %X instead of 0x08, this is probably not an SB model\n", magic);
@@ -119,8 +127,17 @@ int main(int argc, char ** argv) {
     //printf("Mesh vertex offset last %08X %08X\n", meshes[mesh_count - 1].offset, meshes[mesh_count - 1].size);
     
     // Read nodes
-    uint8_t * mesh_nodes = malloc(node_count * sizeof(uint8_t));
-    fread(mesh_nodes, sizeof(uint8_t), node_count, sbmdl);
+    uint8_t * node_parents = malloc(node_count * sizeof(uint8_t));
+    fread(node_parents, sizeof(uint8_t), node_count, sbmdl);
+    
+    float global_pos[3];
+    fread(global_pos, sizeof(float), 3, sbmdl);
+    float global_dir[3];
+    fread(global_dir, sizeof(float), 3, sbmdl);
+    
+    printf("Global POS(%f, %f, %f), DIR(%f, %f, %f)\n",
+        global_pos[0], global_pos[1], global_pos[2],
+        global_dir[0], global_dir[1], global_dir[2]);
     
     char * ext = strrchr(path, '.') + 1;
     
@@ -135,7 +152,7 @@ int main(int argc, char ** argv) {
     
     char * glbin_path = strdup(path);
     
-    FILE * outf = fopen(path, "w");
+    FILE * outf = fopen(path, "wb");
     if (!outf) {
         fprintf(stderr, "Failed to open output file: %s\n", path);
         fclose(sbmdl);
@@ -146,7 +163,7 @@ int main(int argc, char ** argv) {
     
     // Mesh data
     for (uint8_t mi = 0; mi < mesh_count; mi++) {
-        fseek(sbmdl, MODEL_HEADER_OFFSET + verts_in[mi].offset, SEEK_SET);
+        //fseek(sbmdl, MODEL_HEADER_OFFSET + verts_in[mi].offset, SEEK_SET);
         
         verts_out[mi].offset = mi ? verts_out[mi - 1].offset + verts_out[mi - 1].size : 0;
 
@@ -165,18 +182,9 @@ int main(int argc, char ** argv) {
         verts_out[mi].pos[1] = pos[1];
         verts_out[mi].pos[2] = pos[2];
         
-        // Conver from Euler to Quaternion
-        double cx = cos(dir[0] * 0.5);
-        double sx = sin(dir[0] * 0.5);
-        double cy = cos(dir[1] * 0.5);
-        double sy = sin(dir[1] * 0.5);
-        double cz = cos(dir[2] * 0.5);
-        double sz = sin(dir[2] * 0.5);
-        
-        verts_out[mi].dir[0] = sx * cy * cz - cx * sy * sz; // X
-        verts_out[mi].dir[1] = cx * sy * cz + sx * cy * sz; // Y
-        verts_out[mi].dir[2] = cx * cy * sz - sx * sy * cz; // Z
-        verts_out[mi].dir[3] = cx * cy * cz + sx * sy * sz; // W
+        verts_out[mi].dir[0] = dir[0];
+        verts_out[mi].dir[1] = dir[1];
+        verts_out[mi].dir[2] = dir[2];
         
         // Validate mesh format
         int32_t format;
@@ -280,7 +288,7 @@ int main(int argc, char ** argv) {
                 fwrite(vt + 2, sizeof(float), 2, outf);
             }
             
-            uint8_t joints[4] = {mi};
+            uint8_t joints[4] = {mi + 1};
             fwrite(joints, sizeof(uint8_t), 4, outf);
             
             uint8_t weights[4] = {0xFF};
@@ -289,9 +297,61 @@ int main(int argc, char ** argv) {
         }
     }
     
-    fseek(sbmdl, index_section.offset, SEEK_SET);
+    if (extra) {
+        // Extra data would be processed here    
+    }
+
+    uint32_t node_special_count = 0;
+    uint8_t * node_special;
+    if (nodespecial_section.size) {
+        fseek(sbmdl, nodespecial_section.offset, SEEK_SET);
+
+        fread(&node_special_count, sizeof(uint32_t), 1, sbmdl);
+        
+        // Skip 0xFF bytes
+        while(fgetc(sbmdl) == 0xFF);
+        fseek(sbmdl, -1, SEEK_CUR);
+        
+        uint16_t attr;
+        fread(&attr, sizeof(uint16_t), 1, sbmdl);
+        
+        printf("Reading %d special nodes, Attribute %04X\n", node_special_count, attr);
+        
+        if (node_special_count) {
+            node_special = malloc(node_special_count * sizeof(uint8_t));
+            fread(node_special, sizeof(uint8_t), node_special_count, sbmdl);
+        }
+    }
     
-    // Read Index Data Header    
+    
+    uint8_t * node_ids = NULL;
+    if (nodeid_section.size) {
+        fseek(sbmdl, nodeid_section.offset, SEEK_SET);
+        
+        if (nodeid_section.size != node_count) {
+            fprintf(stderr, "Node ID section size %d != node_count %d\n", nodeid_section.size, node_count);
+            return 1;
+        }
+    
+        node_ids = malloc(node_count * sizeof(uint8_t));
+        fread(node_ids, sizeof(uint8_t), node_count, sbmdl);
+        
+        bool non_sequential = false;
+        printf("Read %d node IDs:", node_count);
+        for (int ni = 0; ni < node_count; ni++) {
+            printf(" %d", node_ids[ni]);
+            if (node_ids[ni] != ni) non_sequential = true;
+        }
+        if (non_sequential) printf(" (non sequential)");
+        printf("\n");
+    }
+    
+    if (ftell(sbmdl) != index_section.offset) {
+        fprintf(stderr, "Index section missmatch %08lX %08X\n", ftell(sbmdl), index_section.offset);
+        return 1;
+    }
+    
+    // Read Index Data Header
     struct buffer * inds_in = malloc(mesh_count * sizeof(struct buffer));
     fread(inds_in, sizeof(struct buffer), mesh_count, sbmdl);
     
@@ -300,7 +360,7 @@ int main(int argc, char ** argv) {
     //printf("Index offset last %08X %08X\n", indexes[mesh_count - 1].offset, indexes[mesh_count - 1].size);
     
     for (int mi = 0; mi < mesh_count; mi++) {
-        fseek(sbmdl, index_section.offset + inds_in[mi].offset, SEEK_SET);
+        //fseek(sbmdl, index_section.offset + inds_in[mi].offset, SEEK_SET);
         int32_t inds = inds_in[mi].size;
         
         inds_out[mi].offset = mi ? inds_out[mi - 1].offset + inds_out[mi - 1].size : 0;
@@ -310,7 +370,7 @@ int main(int argc, char ** argv) {
         }
         inds /= 2;
         
-        printf("Reading %d indexes\n", inds);
+        printf("Mesh %d: Reading %d indexes\n", mi, inds);
         
         if (prim_type == cgltf_primitive_type_triangle_strip) {
             inds_out[mi].count = inds;
@@ -347,7 +407,6 @@ int main(int argc, char ** argv) {
     fclose(outf);
     fclose(sbmdl);
 
-
     ext[-1] = '\0';
     
     cgltf_options options = {0};
@@ -376,42 +435,60 @@ int main(int argc, char ** argv) {
     
     data.skins_count = 1;
     cgltf_skin * skin = data.skins = calloc(data.skins_count, sizeof(cgltf_skin));
-    skin->joints_count = mesh_count;
+    skin->joints_count = node_count;
     skin->joints = malloc(skin->joints_count * sizeof(cgltf_node *));
     
-    data.nodes_count = mesh_count;
+    data.nodes_count = node_count;
     data.nodes = calloc(data.nodes_count, sizeof(cgltf_node));
     
-    for (int mi = 0; mi < mesh_count; mi++) {
-        int ni = mi + 1;
-        cgltf_node * node = data.nodes + mi;
+    for (int ni = 0; ni < node_count; ni++) {
+        cgltf_node * node = data.nodes + ni;
+        
+        int nid = node_ids ? node_ids[ni] : ni;
+        
+        char special[8] = {0};
+        for (int nsi = 0; nsi < node_special_count; nsi++) {
+            if (node_special[nsi] == nid) {
+                snprintf(special, sizeof(special), "_%d", nsi);
+                break;
+            }
+        }
+        
+        char name[16];
+        snprintf(name, sizeof(name), "%d%s", nid, special);
+        node->name = strdup(name);
 
-        if (!mi) {
-            node->name = strdup(path);
+        if (!ni) {
             node->mesh = mesh;
             node->skin = skin;
-        }
 
-        if (mesh_nodes[ni] == 0xFF) {
+            node->translation[0] = global_pos[0];
+            node->translation[1] = global_pos[1];
+            node->translation[2] = global_pos[2];
+            node->has_translation = true;
+            
+            euler2quat(node->rotation, global_dir);
+            node->has_rotation = true;
+        } else if (node_parents[ni] == 0xFF) {
             fprintf(stderr, "Node %d is a second root node!\n", ni);
             return 1;
+        } else {
+            int mi = ni - 1;
+
+            node->translation[0] = verts_out[mi].pos[0];
+            node->translation[1] = verts_out[mi].pos[1];
+            node->translation[2] = verts_out[mi].pos[2];
+            node->has_translation = true;
+            
+            euler2quat(node->rotation, verts_out[mi].dir);
+            node->has_rotation = true;
+
         }
         
-        node->translation[0] = verts_out[mi].pos[0];
-        node->translation[1] = verts_out[mi].pos[1];
-        node->translation[2] = verts_out[mi].pos[2];
-        node->has_translation = true;
-
-        node->rotation[0] = verts_out[mi].dir[0];
-        node->rotation[1] = verts_out[mi].dir[1];
-        node->rotation[2] = verts_out[mi].dir[2];
-        node->rotation[3] = verts_out[mi].dir[3];
-        node->has_rotation = true;
-            
-        skin->joints[mi] = node;
+        skin->joints[ni] = node;
         
         for (int nj = 0; nj < node_count; nj++) {
-            if (mesh_nodes[nj] == ni) {
+            if (node_parents[nj] == ni) {
                 if (nj == ni) {
                     fprintf(stderr, "Node %d is it's own child!\n", nj);
                     return 1;
@@ -425,8 +502,8 @@ int main(int argc, char ** argv) {
             node->children = malloc(node->children_count * sizeof(cgltf_node *));
             
             for (int cni = 0, nj = 0; nj < node_count; nj++) {
-                if (mesh_nodes[nj] == ni) {
-                    node->children[cni++] = data.nodes + (nj - 1);
+                if (node_parents[nj] == ni) {
+                    node->children[cni++] = data.nodes + nj;
                 }
             }
         };
@@ -592,3 +669,4 @@ int main(int argc, char ** argv) {
 
     return 0;
 }
+

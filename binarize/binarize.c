@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 
 #ifdef __linux__
 #include <errno.h>
@@ -10,6 +11,9 @@
 #else
 #include <windows.h>
 #endif
+
+#define FORMAT_XBO 0x152
+#define FORMAT_SHA 0x12
 
 #define FLAG_PADDED 0x1
 
@@ -219,6 +223,8 @@ int unpack(char * path) {
         fprintf(stderr, "No file at path %s\n", path);
         return 1;
     }
+    
+    bool is_motion = strstr(path, "MOTION.bin") != NULL;
 
     // Validate magic
     char magic[4];
@@ -310,8 +316,18 @@ int unpack(char * path) {
             fseek(binf, file_list[i].offset + 0x58, SEEK_SET);
             uint32_t sbmdl[2];
             fread(sbmdl, sizeof(uint32_t), 2, binf);
-            if (sbmdl[0] == 0x08 && sbmdl[1] == 0x18) ext = "xbo";
-        }
+            if (sbmdl[0] == 0x08 && sbmdl[1] == 0x18) {
+                uint32_t vertex_offset;
+                fread(&vertex_offset, sizeof(uint32_t), 1, binf);
+                fseek(binf, file_list[i].offset + 0x50 + vertex_offset + 24, SEEK_SET);
+
+                uint32_t vertex_format;
+                fread(&vertex_format, sizeof(uint32_t), 1, binf);
+                if (vertex_format == FORMAT_XBO) ext = "xbo";
+                else if (vertex_format == FORMAT_SHA) ext = "sha";
+                else ext = "sbmodel";
+            }
+        } else if (is_motion) ext = "lmt";
 
         pr = snprintf(out_path, MAX_OUT_PATH, "%s%04d.%s", path, i, ext);
         if (pr < 0 || pr >= MAX_OUT_PATH) {
