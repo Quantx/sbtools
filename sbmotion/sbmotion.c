@@ -177,7 +177,8 @@ int main(int argc, char ** argv) {
     
     strncpy(path, path_gltf, sizeof(path));
     char * sep = strrchr(path, SEPARATOR);
-    strcpy(sep + 1, data->buffers->uri);
+    if (sep) strcpy(sep + 1, data->buffers->uri);
+    else strncpy(path, data->buffers->uri, sizeof(path));
     
     if (access(path, F_OK)) {
         fprintf(stderr, "Could not locate %s\n", path);

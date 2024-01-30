@@ -477,6 +477,14 @@ int main(int argc, char ** argv) {
     data.nodes_count = node_count;
     data.nodes = calloc(data.nodes_count, sizeof(cgltf_node));
     
+    data.scenes_count = 1;
+    cgltf_scene * scene = data.scene = data.scenes = calloc(data.scenes_count, sizeof(cgltf_scene));
+
+    scene->name = strdup(model_name);
+    scene->nodes_count = 1;
+    scene->nodes = calloc(scene->nodes_count, sizeof(cgltf_node *));
+    scene->nodes[0] = data.nodes;
+    
     for (int ni = 0; ni < node_count; ni++) {
         cgltf_node * node = data.nodes + ni;
         
