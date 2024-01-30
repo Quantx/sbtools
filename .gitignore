@@ -2,10 +2,12 @@ binarize/binarize
 binarize/binarize.exe
 sbengine/sbengine
 sbengine/sbengine.exe
+sbweapon/sbweapon
+sbweapon/sbweapon.exe
 sbmodel/sbmodel
 sbmodel/sbmodel.exe
 sbstage/sbstage
-sbstate/sbstage.exe
+sbstage/sbstage.exe
 sbterrain/sbterrain
 sbterrain/sbterrain.exe
 sbtexture/sbtexture
