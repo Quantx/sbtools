@@ -218,8 +218,9 @@ int readXPRHeader(FILE * xprf, uint32_t * data_start, uint32_t * data_size, uint
     }
     
     if (file_size == *data_start) {
-        fprintf(stderr, "File does not contain any image data, nothing to convert\n");
-        return 1;
+        // File contains no data so we're done (this is not an error)
+        printf("File does not contain any image data, nothing to convert\n");
+        return -1;
     }
     
     // Read format
@@ -240,8 +241,9 @@ int readXPRHeader(FILE * xprf, uint32_t * data_start, uint32_t * data_size, uint
     else if (*color == FORMAT_DXT3) format_str = "DXT3";
     else if (*color == FORMAT_RGBA) format_str = "RGBA";
     else {
+        // Not considering this an error
         fprintf(stderr, "Unknown texture format %02X for file\n", *color);
-        return 1;
+        return -1;
     }
     
     uint16_t dimensions = FORMAT_DIMENSIONS(format_info);
@@ -290,9 +292,10 @@ int makeTGA(char * path) {
     uint32_t data_start, dxt_data_size;
     uint16_t width, height, levels;
     uint8_t color;
-    if (readXPRHeader(sbtex, &data_start, &dxt_data_size, &color, &width, &height, &levels)) {
+    int xpr_res = readXPRHeader(sbtex, &data_start, &dxt_data_size, &color, &width, &height, &levels);
+    if (xpr_res) {
         fclose(sbtex);
-        return 1;
+        return xpr_res > 0 ? xpr_res : 0;
     }
     
     // Read data from XPR
@@ -396,10 +399,11 @@ int makeXPR(char * path) {
     uint32_t data_start, data_size;
     uint16_t xpr_width, xpr_height, xpr_levels;
     uint8_t color;
-    if (readXPRHeader(sbtex, &data_start, &data_size, &color, &xpr_width, &xpr_height, &xpr_levels)) {
+    int xpr_res = readXPRHeader(sbtex, &data_start, &data_size, &color, &xpr_width, &xpr_height, &xpr_levels);
+    if (xpr_res) {
         fclose(sbtex);
         stbi_image_free(img);
-        return 1;
+        return xpr_res > 0 ? xpr_res : 0;
     }
     
     if (xpr_width != width || xpr_height != height) {

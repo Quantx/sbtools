@@ -10,8 +10,8 @@
 #include "cgltf_write.h"
 
 #ifdef __linux__
-#include <unistd.h>
 #define SEPARATOR '/'
+#include <unistd.h>
 #else
 #define SEPARATOR '\\'
 #include <io.h>
@@ -29,6 +29,8 @@ struct motion {
 };
 
 char * progname;
+
+char path[256];
 
 void euler2quat(float quat[4], float euler[3]) {
     // Conver from Euler to Quaternion
@@ -147,7 +149,7 @@ int main(int argc, char ** argv) {
     }
     
     cgltf_skin * skin = data->skins;
-    if (skin->joints_count != bone_count) {
+    if (bone_count != skin->joints_count) {
         fprintf(stderr, "Bone count %d does not match count %ld defined in glTF file\n", bone_count, skin->joints_count);
         fclose(lmt);
         cgltf_free(data);
@@ -172,26 +174,21 @@ int main(int argc, char ** argv) {
     buf_view->type = cgltf_buffer_view_type_vertices;
     
     data->buffer_views_count++;
-        
-    char * sep = strrchr(path_gltf, SEPARATOR);
-    char prev_sep = sep[1];
-    sep[1] = '\0';
     
-    char glbin_path[256];
-    snprintf(glbin_path, sizeof(glbin_path), "%s%s", path_gltf, data->buffers->uri);
+    strncpy(path, path_gltf, sizeof(path));
+    char * sep = strrchr(path, SEPARATOR);
+    strcpy(sep + 1, data->buffers->uri);
     
-    sep[1] = prev_sep;
-    
-    if (access(glbin_path, F_OK)) {
-        fprintf(stderr, "Could not locate %s\n", glbin_path);
+    if (access(path, F_OK)) {
+        fprintf(stderr, "Could not locate %s\n", path);
         fclose(lmt);
         cgltf_free(data);
         return 1;
     }
     
-    FILE * glbin = fopen(glbin_path, "ab");
+    FILE * glbin = fopen(path, "ab");
     if (!glbin) {
-        fprintf(stderr, "Failed to open %s\n", glbin_path);
+        fprintf(stderr, "Failed to open %s\n", path);
         fclose(lmt);
         cgltf_free(data);
         return 1;
@@ -329,12 +326,12 @@ int main(int argc, char ** argv) {
                 pos[2] /= scale_factor;
 
                 float time = (float)(frame_time) / fps;
-
+/*
                 printf("Bone %d, Frame %d, Time %f, Pos (%f %f %f), Dir (%f %f %f)\n",
                     bone_id, frame_time, time,
                     pos[0], pos[1], pos[2],
                     dir[0], dir[1], dir[2]);
-                
+*/
                 float quat[4];
                 euler2quat(quat, dir);
                 
@@ -354,11 +351,6 @@ int main(int argc, char ** argv) {
     
     buf_view->size = output_offset;
     buf->size += output_offset;
-    
-    cgltf_accessor * acc_last = data->accessors + data->accessors_count + -1;
-    printf("Acc_last size: %ld\n", acc_last->offset + acc_last->stride * acc_last->count);
-    
-    printf("Buffer view size: %ld\n", buf_view->offset);
     
     fclose(lmt);
     fclose(glbin);

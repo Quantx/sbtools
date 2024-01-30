@@ -63,9 +63,12 @@ int pack(char * path) {
     if (hmp == size) {
         hmp = 0;
         printf("8-bit precision heightmap\n");
-    } else if (hmp == size * 2) {
+    } else if (hmp == size * sizeof(uint16_t)) {
         hmp = 1;
         printf("16-bit precision heightmap\n");
+    } else if (hmp == size * sizeof(float)) {
+        hmp = 2;
+        printf("32-bit float heightmap\n");
     } else {
         fprintf(stderr, "Heightmap size was %d bytes, expected %d for 8-bit percision or %d for 16-bit percision\n", hmp, size, size * 2);
         return 1;
@@ -89,14 +92,14 @@ int pack(char * path) {
         if (hmp == 0) {
             uint8_t sei;
             fread(&sei, sizeof(uint8_t), 1, hmdf);
-            elv = sei;
+            elv = sei * 100.0f;
         } else if (hmp == 1) {
             int16_t sei;
             fread(&sei, sizeof(int16_t), 1, hmdf);
-            elv = sei;
+            elv = sei * 100.0f;
+        } else if (hmp == 2) {
+            fread(&elv, sizeof(float), 1, hmdf);
         }
-        
-        elv *= 100.0f;
         
         fwrite(&elv, sizeof(float), 1, gndf);
     }
@@ -203,30 +206,17 @@ int pack(char * path) {
 }
 
 int unpack(char * path) {
-    int pr = snprintf(out_path, PATH_OUT_MAX, "%s.gnd", path);
-    if (pr < 0 || pr >= PATH_OUT_MAX) {
-        fprintf(stderr, "Ran out of room when trying to allocate .gnd path\n");
-        return 1;
-    }
-
-    FILE * gndf = fopen(out_path, "rb");
-    if (!gndf) {
-        fprintf(stderr, "Failed to open %s\n", out_path);
-        return 1;
-    }
-    
-    printf("Reading heightmap data from %s\n", out_path);
-    
-    pr = snprintf(out_path, PATH_OUT_MAX, "%shit.gad", path);
+    int pr = snprintf(out_path, PATH_OUT_MAX, "%shit.gad", path);
     if (pr < 0 || pr >= PATH_OUT_MAX) {
         fprintf(stderr, "Ran out of room when trying to allocate .gad path\n");
         return 1;
     }
+
+    printf("Reading terrain attribute data from %s\n", out_path);
     
     FILE * gadf = fopen(out_path, "rb");
     if (!gadf) {
         fprintf(stderr, "Failed to open %s\n", out_path);
-        fclose(gndf);
         return 1;
     }
     
@@ -240,9 +230,7 @@ int unpack(char * path) {
     printf("Width %d, Height %d, Size %d\n", width, height, size);
     if (width != MAP_WIDTH || height != MAP_HEIGHT) printf("Warning map was not 280x280 in size!\n");
 
-    uint8_t * gad_magic = calloc(size, 3);
-    uint8_t * gad_torque = calloc(size, 3);
-    int errorseen = 0;
+    uint8_t * gad_data = calloc(size, 3);
     for (int i = 0; i < size; i++ ) {
         int pos = i * 3;
         
@@ -258,11 +246,11 @@ int unpack(char * path) {
         case 0xCC000000: mv = 2; break;
         case 0xC8400000: mv = 3; break;
         default:
-            mv = 0xFF;
+            mv = 4;
             printf("Unknown magic %08X at %d\n", magic, i);
         }
         
-        gad_magic[pos] = mv * 64;
+        gad_data[pos] = mv * 64;
         
         // Torque
         uint8_t tv;
@@ -278,32 +266,37 @@ int unpack(char * path) {
             }
         }
 
-        gad_torque[pos] = tv * 8;
+        gad_data[pos + 2] = tv * 8;
     }
     
     fclose(gadf);
     
-    pr = snprintf(out_path, PATH_OUT_MAX, "%s_magic.tga", path);
+    pr = snprintf(out_path, PATH_OUT_MAX, "%s_hit.tga", path);
     if (pr < 0 || pr >= PATH_OUT_MAX) {
         fprintf(stderr, "Ran out of room when trying to allocate %s_magic.tga path\n", path);
         return 1;
     }
     
-    if (!stbi_write_tga(out_path, width, height, 3, gad_magic)) {
+    if (!stbi_write_tga(out_path, width, height, 3, gad_data)) {
         fprintf(stderr, "Failed to open %s\n", out_path);
         return 1;
     }
-    
-    pr = snprintf(out_path, PATH_OUT_MAX, "%s_torque.tga", path);
+
+    // *** Finished read .gad now try and read the .gnd file
+
+    pr = snprintf(out_path, PATH_OUT_MAX, "%s.gnd", path);
     if (pr < 0 || pr >= PATH_OUT_MAX) {
-        fprintf(stderr, "Ran out of room when trying to allocate %s_torque.tga path\n", path);
+        fprintf(stderr, "Ran out of room when trying to allocate .gnd path\n");
         return 1;
+    }
+
+    FILE * gndf = fopen(out_path, "rb");
+    if (!gndf) {
+        printf("No heightmap data for this terrain could be found at %s\n", out_path);
+        return 0;
     }
     
-    if (!stbi_write_tga(out_path, width, height, 3, gad_torque)) {
-        fprintf(stderr, "Failed to open %s\n", out_path);
-        return 1;
-    }
+    printf("Reading terrain heightmap data from %s\n", out_path);
     
     pr = snprintf(out_path, PATH_OUT_MAX, "%s_height.data", path);
     if (pr < 0 || pr >= PATH_OUT_MAX) {
@@ -317,38 +310,35 @@ int unpack(char * path) {
         return 1;
     }
     
-    float fw = width;
-    float fh = height;
-    
     float minh, maxh;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            float fx = x;
-            float fy = y;
-            
             float elv;
             fread(&elv, sizeof(float), 1, gndf);
-        
+
             if (!x && !y) { minh = elv; maxh = elv; }
             else {
                 minh = fmin(minh, elv);
                 maxh = fmax(maxh, elv);
             }
             
+            fwrite(&elv, sizeof(float), 1, hmdf);
+/*
             elv /= 100.0f;
-        
+
             if (elv > INT16_MAX) fprintf(stderr, "Warning height of %f is greater than INT16 maximum\n", elv);
             if (elv < INT16_MIN) fprintf(stderr, "Warning height of %f is smaller than INT16 minimum\n", elv);
-        
+
             int16_t sei = elv;
-            
+
             fwrite(&sei, sizeof(int16_t), 1, hmdf);
+*/
         }
     }
     
     fclose(hmdf);
     
-    printf("Min %f, Max %f\n", minh, maxh);
+//    printf("Min %f, Max %f\n", minh, maxh);
 
     fseek(gndf, size * sizeof(float), SEEK_CUR);
     
@@ -362,7 +352,6 @@ int unpack(char * path) {
         uint8_t temp = texture[i];
         texture[i] = texture[i + 2];
         texture[i + 2] = temp;
-        
 //        texture[i+3] = 0xFF;
     }
     
@@ -376,6 +365,8 @@ int unpack(char * path) {
         fprintf(stderr, "Failed to open %s\n", out_path);
         return 1;
     }
+    
+    return 0;
 }
 
 int main(int argc, char ** argv) {

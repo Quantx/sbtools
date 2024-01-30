@@ -9,11 +9,19 @@
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #include "cgltf_write.h"
 
+#ifdef __linux__
+#define SEPARATOR '/'
+#else
+#define SEPARATOR '\\'
+#endif
+
 #define MODEL_HEADER_OFFSET 0x50
 #define MODEL_HEADER_SIZE 16
 
-#define FORMAT_XBO 0x152
-#define FORMAT_SHA 0x12
+#define FORMAT_XBO  0x152
+#define FORMAT_XBO2 0x52
+#define FORMAT_SHA  0x12
+
 
 char path[256];
 
@@ -56,6 +64,30 @@ void euler2quat(float quat[4], float euler[3]) {
     quat[3] = cx * cy * cz + sx * sy * sz; // W
 }
 
+/*
+#define BONE_NAME_COUNT 18
+char * bone_names[BONE_NAME_COUNT] = {
+    "body",
+    "r_mwep",
+    "l_mwep",
+    "swep",
+    "r_shoulder",
+    "l_shoulder",
+    "back_camera",
+    "manipulator",
+    "high_front",
+    "front_camera",
+    "r_tank",
+    "l_tank",
+    "cockpit",
+    "back_center",
+    "r_foot",
+    "l_foot",
+    "emblem",
+    "high_back"
+};
+*/
+
 int main(int argc, char ** argv) {
     progname = *argv++; argc--;
 
@@ -75,6 +107,15 @@ int main(int argc, char ** argv) {
         fprintf(stderr, "Failed to open XBO file: %s\n", path);
         return 1;
     }
+    
+    char model_name[64];
+    char * sep = strrchr(path, SEPARATOR);
+    if (sep) {
+        strncpy(model_name, sep + 1, sizeof(model_name));
+    } else {
+        strncpy(model_name, path, sizeof(model_name));
+    }
+    *strrchr(model_name, '.') = '\0';
     
     // Get position of index table
     fseek(sbmdl, 8, SEEK_SET);
@@ -139,18 +180,9 @@ int main(int argc, char ** argv) {
         global_pos[0], global_pos[1], global_pos[2],
         global_dir[0], global_dir[1], global_dir[2]);
     
-    char * ext = strrchr(path, '.') + 1;
-    
-    if (strlen(ext) < 3) {
-        fprintf(stderr, "Failed to generate output extension, path to short\n");
-        fclose(sbmdl);
-        return 1;
-    }
-    
     // Replace file extension
+    char * ext = strrchr(path, '.') + 1;
     strcpy(ext, "glbin");
-    
-    char * glbin_path = strdup(path);
     
     FILE * outf = fopen(path, "wb");
     if (!outf) {
@@ -189,8 +221,8 @@ int main(int argc, char ** argv) {
         // Validate mesh format
         int32_t format;
         fread(&format, sizeof(uint32_t), 1, sbmdl);
-        if (format != FORMAT_XBO) {// && format != FORMAT_SHA) {
-            fprintf(stderr, "Mesh %d, unknown format %08X\n", mi, magic);
+        if (format != FORMAT_XBO && format != FORMAT_XBO2) {// && format != FORMAT_SHA) {
+            fprintf(stderr, "Mesh %d, unknown format %08X at position %08lX\n", mi, format, ftell(sbmdl) - 4);
             return 1;
         }
         
@@ -202,7 +234,7 @@ int main(int argc, char ** argv) {
         
         // Valide mesh magic
         fread(&magic, sizeof(uint32_t), 1, sbmdl);
-        if (magic != 6) printf("Mesh %d magic2 was %08X instead of 0x6\n", mi, magic);
+        if (magic != 6) printf("Mesh %d magic2 was %08X instead of 0x6\n", mi, magic);  
         
         // Read mesh attributes
         int16_t attrs[4];
@@ -215,6 +247,8 @@ int main(int argc, char ** argv) {
 
         if (format == FORMAT_XBO && vert_size != 20) {
             printf("Format XBO does not have vert_size of 20, vert_size == %d\n", vert_size);
+        } else if (format == FORMAT_XBO2 && vert_size != 16) {
+            printf("Format XBO2 does not have vert_size of 16, vert_size == %d\n", vert_size);
         } else if (format == FORMAT_SHA && vert_size != 12) {
             printf("Format SHA does not have vert_size of 12, vert_size == %d\n", vert_size);
         }
@@ -274,18 +308,21 @@ int main(int argc, char ** argv) {
             
             fwrite(vn, sizeof(float), 3, outf);
 
+            // Skip these two 16 bit values (no idea what they do
             if (format == FORMAT_XBO) {
+                fseek(sbmdl, 2 * sizeof(int16_t), SEEK_CUR);
+            }
+
+            if (format == FORMAT_XBO || format == FORMAT_XBO2) {
                 // Read vertex texture coords
-                int16_t vti[4];
-                fread(vti, sizeof(int16_t), 4, sbmdl);
-                float vt[4] = { vti[0], vti[1], vti[2], vti[3] };
+                int16_t vti[2];
+                fread(vti, sizeof(int16_t), 2, sbmdl);
+                float vt[2] = { vti[0], vti[1] };
 
                 vt[0] /= 32768.0f;
                 vt[1] /= 32768.0f;
-                vt[2] /= 32768.0f;
-                vt[3] /= 32768.0f;
                 
-                fwrite(vt + 2, sizeof(float), 2, outf);
+                fwrite(vt, sizeof(float), 2, outf);
             }
             
             uint8_t joints[4] = {mi + 1};
@@ -308,19 +345,18 @@ int main(int argc, char ** argv) {
 
         fread(&node_special_count, sizeof(uint32_t), 1, sbmdl);
         
-        // Skip 0xFF bytes
-        while(fgetc(sbmdl) == 0xFF);
-        fseek(sbmdl, -1, SEEK_CUR);
-        
-        uint16_t attr;
-        fread(&attr, sizeof(uint16_t), 1, sbmdl);
-        
-        printf("Reading %d special nodes, Attribute %04X\n", node_special_count, attr);
+        fseek(sbmdl, nodespecial_section.offset + nodespecial_section.size - node_special_count, SEEK_SET);
         
         if (node_special_count) {
             node_special = malloc(node_special_count * sizeof(uint8_t));
             fread(node_special, sizeof(uint8_t), node_special_count, sbmdl);
         }
+
+        printf("Read %d special node IDs:", node_special_count);        
+        for (int ni = 0; ni < node_special_count; ni++) {
+            printf(" %d", node_special[ni]);
+        }
+        printf("\n");
     }
     
     
@@ -347,7 +383,7 @@ int main(int argc, char ** argv) {
     }
     
     if (ftell(sbmdl) != index_section.offset) {
-        fprintf(stderr, "Index section missmatch %08lX %08X\n", ftell(sbmdl), index_section.offset);
+        fprintf(stderr, "Index section mismatch %08lX %08X\n", ftell(sbmdl), index_section.offset);
         return 1;
     }
     
@@ -406,8 +442,6 @@ int main(int argc, char ** argv) {
 
     fclose(outf);
     fclose(sbmdl);
-
-    ext[-1] = '\0';
     
     cgltf_options options = {0};
     cgltf_data data = {0};
@@ -419,7 +453,7 @@ int main(int argc, char ** argv) {
 
     data.meshes_count = 1;
     cgltf_mesh * mesh = data.meshes = calloc(data.meshes_count, sizeof(cgltf_mesh));
-    mesh->name = strdup(path);
+    mesh->name = strdup(model_name);
 
     data.accessors_count = mesh_count * 6;
     data.accessors = calloc(data.accessors_count, sizeof(cgltf_accessor));
@@ -427,8 +461,10 @@ int main(int argc, char ** argv) {
     data.buffers_count = 1;
     cgltf_buffer * buf = data.buffers = calloc(data.buffers_count, sizeof(cgltf_buffer));
     
-    buf->name = strdup(path);
-    buf->uri = glbin_path;
+    buf->name = strdup(model_name);
+    
+    char * glbin_name = sep ? sep + 1 : path;
+    buf->uri = strdup(glbin_name);
 
     data.buffer_views_count = 2;
     data.buffer_views = calloc(data.buffer_views_count, sizeof(cgltf_buffer_view));
@@ -444,18 +480,20 @@ int main(int argc, char ** argv) {
     for (int ni = 0; ni < node_count; ni++) {
         cgltf_node * node = data.nodes + ni;
         
-        int nid = node_ids ? node_ids[ni] : ni;
-        
-        char special[8] = {0};
+        int special_id = -1;
         for (int nsi = 0; nsi < node_special_count; nsi++) {
-            if (node_special[nsi] == nid) {
-                snprintf(special, sizeof(special), "_%d", nsi);
+            if (node_special[nsi] == ni) {
+                special_id = nsi;
                 break;
             }
         }
-        
-        char name[16];
-        snprintf(name, sizeof(name), "%d%s", nid, special);
+
+        char name[16];        
+        if (special_id >= 0) {
+            snprintf(name, sizeof(name), "special_%d", special_id);
+        } else {
+            snprintf(name, sizeof(name), "%d", ni);
+        }
         node->name = strdup(name);
 
         if (!ni) {

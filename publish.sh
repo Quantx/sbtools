@@ -9,6 +9,9 @@ make win -C segment
 make -C sbmodel
 make win -C sbmodel
 
+make -C sbmotion
+make win -C sbmotion
+
 make -C sbtexture
 make win -C sbtexture
 
@@ -17,6 +20,12 @@ make win -C sbterrain
 
 make -C sbstage
 make win -C sbstage
+
+make -C sbengine
+make win -C sbengine
+
+make -C sbweapon
+make win -C sbweapon
 
 # Create output directories
 mkdir -p sbtools
@@ -33,6 +42,9 @@ cp segment/segment.exe sbtools/windows/segment.exe
 cp sbmodel/sbmodel.exe sbtools/windows/sbmodel.exe
 cp sbmodel/sbmodel sbtools/linux/sbmodel
 
+cp sbmotion/sbmotion.exe sbtools/windows/sbmotion.exe
+cp sbmotion/sbmotion sbtools/linux/sbmotion
+
 cp sbtexture/sbtexture.exe sbtools/windows/sbtexture.exe
 cp sbtexture/sbtexture sbtools/linux/sbtexture
 
@@ -41,6 +53,14 @@ cp sbterrain/sbterrain sbtools/linux/sbterrain
 
 cp sbstage/sbstage.exe sbtools/windows/sbstage.exe
 cp sbstage/sbstage sbtools/linux/sbstage
+
+cp sbengine/sbengine.exe sbtools/windows/sbengine.exe
+cp sbengine/sbengine sbtools/linux/sbengine
+
+cp sbweapon/sbweapon.exe sbtools/windows/sbweapon.exe
+cp sbweapon/sbweapon sbtools/linux/sbweapon
+
+cp package.py sbtools/package.py
 
 # Zip output directory
 rm sbtools.zip
