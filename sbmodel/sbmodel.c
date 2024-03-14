@@ -388,7 +388,13 @@ int main(int argc, char ** argv) {
         
         printf("Read %d node IDs:", node_count);
         for (int ni = 0; ni < node_count; ni++) {
-            printf(" %d", mirror_ids[ni]);
+            int mi = mirror_ids[ni];
+            printf(" %d", mi);
+            
+            // Fixup mirror IDs
+            if (mi != ni && mirror_ids[mi] == mi) {
+                mirror_ids[mi] = ni;
+            }
         }
         printf("\n");
     }

@@ -155,7 +155,7 @@ def main(root_path, out_path):
                 gltf_path = os.path.join(BIN_PATHS["MODEL"], f"{gltf:04}.gltf")                
                 
                 print("Adding motion file:", lmt_path, "To glTF file:", gltf_path)
-                res = subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path])
+                res = subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path, "--mirror"])
                 if res.returncode != 0: sys.exit(1)
     
     # VT Hatches

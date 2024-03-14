@@ -47,9 +47,9 @@ void euler2quat(float quat[4], float euler[3]) {
     quat[3] = cx * cy * cz + sx * sy * sz; // W
 }
 
-void realloc_cgltf(cgltf_data * data, int motion_count, int bone_count) {
-    // We're going to need a ton of accessors for this: motion_count * bone_count * 3 (Time, Position, Rotation)
-    cgltf_accessor * accessors = calloc(data->accessors_count + motion_count * bone_count * 3, sizeof(cgltf_accessor));
+void realloc_cgltf(cgltf_data * data, int anim_count, int bone_count) {
+    // We're going to need a ton of accessors for this: anim_count * bone_count * 3 (Time, Position, Rotation)
+    cgltf_accessor * accessors = calloc(data->accessors_count + anim_count * bone_count * 3, sizeof(cgltf_accessor));
     cgltf_buffer_view * buffer_views = calloc(data->buffer_views_count + 1, sizeof(cgltf_buffer_view));
 
     memcpy(accessors, data->accessors, data->accessors_count * sizeof(cgltf_accessor));
@@ -89,13 +89,19 @@ int main(int argc, char ** argv) {
 
     printf("SB Motion Tool - By QuantX\n");
 
-    if (argc != 2) {
-        fprintf(stderr, "Please specify a LMT motion file and a glTF model file: %s <path/example.lmt> <path/example.gltf>\n", progname);
+    if (argc < 2) {
+        fprintf(stderr, "Please specify a LMT motion file and a glTF model file: %s <path/example.lmt> <path/example.gltf> --mirror\n", progname);
         return 1;
     }
     
     char * path_lmt = *argv++; argc--;
     char * path_gltf = *argv++; argc--;
+    
+    bool mirror = false;
+    if (argc && !strcmp(*argv, "--mirror")) {
+        *argv++; argc--;
+        mirror = true;
+    }
     
     FILE * lmt = fopen(path_lmt, "rb");
     if (!lmt) {
@@ -118,6 +124,9 @@ int main(int argc, char ** argv) {
         fclose(lmt);
         return 0;
     }
+    
+    int anim_count = motion_count;
+    if (mirror) anim_count *= 2;
     
     printf("Processing %d motions, %d bones\n", motion_count, bone_count);
     
@@ -163,7 +172,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
     
-    realloc_cgltf(data, motion_count, bone_count);
+    realloc_cgltf(data, anim_count, bone_count);
 
     cgltf_buffer * buf = data->buffers;
     cgltf_buffer_view * buf_view = data->buffer_views + data->buffer_views_count;
@@ -195,7 +204,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-	data->animations_count = motion_count;    
+	data->animations_count = anim_count;
     data->animations = calloc(data->animations_count, sizeof(cgltf_animation));
     
     struct motion * motions = malloc(motion_count * sizeof(struct motion));
@@ -205,152 +214,215 @@ int main(int argc, char ** argv) {
     
     uint32_t output_offset = 0;
     
+    int current_anim = 0;
     for (int mi = 0; mi < motion_count; mi++) {
         if (ftell(lmt) != motions[mi].offset) {
             fprintf(stderr, "Wrong motion offset %08lX expected %08X\n", ftell(lmt), motions[mi].offset);
             return 1;
         }
 
-        cgltf_animation * anim = data->animations + mi;
-        
-        char name[32];
-        snprintf(name, sizeof(name), "Anim_%d", mi);
-        anim->name = strdup(name);
+        for (int mc = 0; mc < 2; mc++) {
+            fseek(lmt, motions[mi].offset, SEEK_SET);
+            
+            cgltf_animation * anim = data->animations + current_anim++;
+            
+            char name[32];
+            snprintf(name, sizeof(name), "Anim_%d", mi);
+            if (mc) strcat(name, "M");
+            anim->name = strdup(name);
 
-        // Read bone offsets
-        fread(bones, sizeof(uint32_t), bone_count, lmt);
-        // REMEMBER: If the offset (bones[...] == 0) then we ignore that bone
-        printf("Motion %d, length %d frames, bone offsets:", mi, motions[mi].max_frame);
-        for (int bi = 0; bi < bone_count; bi++) {
-            if (bones[bi]) {
-                anim->channels_count += 2;
-                anim->samplers_count += 2;
-            
-                printf(" %08X", bones[bi] + motions[mi].offset);
-            } else printf(" XXXXXXXX");
-        }
-        printf("\n");
-        
-        anim->channels = calloc(anim->channels_count, sizeof(cgltf_animation_channel));
-        anim->samplers = calloc(anim->samplers_count, sizeof(cgltf_animation_sampler));
-        
-        unsigned int channel = 0;
-        
-        for (int bi = 0; bi < bone_count; bi++) {
-            if (!bones[bi]) continue;
-            
-            uint16_t bone_id;
-            fread(&bone_id, sizeof(uint16_t), 1, lmt);
-            
-            uint16_t frame_count;
-            fread(&frame_count, sizeof(uint16_t), 1, lmt);
-            
-            printf("Reading %d frames for bone %d\n", frame_count, bone_id);
-            
-            cgltf_accessor * accs = data->accessors + data->accessors_count;
-
-            snprintf(name, sizeof(name), "Time_%d_%d", mi, bone_id);
-            accs[0].name = strdup(name);
-            accs[0].component_type = cgltf_component_type_r_32f;
-            accs[0].type = cgltf_type_scalar;
-            accs[0].buffer_view = buf_view;
-            
-            accs[0].offset = output_offset;
-            accs[0].stride = animation_stride;
-            
-            accs[0].min[0] = 0.0f;
-            accs[0].has_min = true;
-            
-            accs[0].max[0] = (float)(motions[mi + 1].max_frame) / fps;
-            accs[0].has_max = true;
-            
-            snprintf(name, sizeof(name), "Translation_%d_%d", mi, bone_id);
-            accs[1].name = strdup(name);
-            accs[1].component_type = cgltf_component_type_r_32f;
-            accs[1].type = cgltf_type_vec3;
-            accs[1].buffer_view = buf_view;
-            
-            accs[1].offset = output_offset + sizeof(float);
-            accs[1].stride = animation_stride;
-            
-            snprintf(name, sizeof(name), "Rotation_%d_%d", mi, bone_id);
-            accs[2].name = strdup(name);
-            accs[2].component_type = cgltf_component_type_r_32f;
-            accs[2].type = cgltf_type_vec4;
-            accs[2].buffer_view = buf_view;
-            
-            accs[2].offset = output_offset + (4 * sizeof(float));
-            accs[2].stride = animation_stride;
-            
-            data->accessors_count += 3;
-
-
-            cgltf_animation_sampler * samp = anim->samplers + channel;
-            
-            samp[0].input = accs;
-            samp[0].output = accs + 1;
-            samp[0].interpolation = cgltf_interpolation_type_linear;
-            
-            samp[1].input = accs;
-            samp[1].output = accs + 2;
-            samp[1].interpolation = cgltf_interpolation_type_linear;
-
-            cgltf_animation_channel * chan = anim->channels + channel;
-            
-            chan[0].sampler = samp;
-            chan[0].target_node = skin->joints[bone_id];
-            chan[0].target_path = cgltf_animation_path_type_translation;
-            
-            chan[1].sampler = samp + 1;
-            chan[1].target_node = skin->joints[bone_id];
-            chan[1].target_path = cgltf_animation_path_type_rotation;
-            
-            channel += 2;
-            
-            uint32_t output_count = 0;
-            for (int fi = 0; fi < frame_count; fi++) {
-                uint16_t frame_index;
-                fread(&frame_index, sizeof(uint16_t), 1, lmt);
+            // Read bone offsets
+            fread(bones, sizeof(uint32_t), bone_count, lmt);
+            // REMEMBER: If the offset (bones[...] == 0) then we ignore that bone
+            printf("Motion %d%s, length %d frames, bone offsets:", mi, mc ? " (Mirror)" : "", motions[mi].max_frame);
+            for (int bi = 0; bi < bone_count; bi++) {
+                if (bones[bi]) {
+                    anim->channels_count += 2;
+                    anim->samplers_count += 2;
                 
-                if (frame_index != fi) {
-                    fprintf(stderr, "Frame index %d does not match actual index %d\n", frame_index, fi);
-                    return 1;
+                    printf(" %08X", bones[bi] + motions[mi].offset);
+                } else printf(" XXXXXXXX");
+            }
+            printf("\n");
+            
+            anim->channels = calloc(anim->channels_count, sizeof(cgltf_animation_channel));
+            anim->samplers = calloc(anim->samplers_count, sizeof(cgltf_animation_sampler));
+            
+            unsigned int channel = 0;
+            
+            for (int bi = 0; bi < bone_count; bi++) {
+                if (!bones[bi]) continue;
+                
+                uint16_t bone_id;
+                fread(&bone_id, sizeof(uint16_t), 1, lmt);
+                
+                uint16_t frame_count;
+                fread(&frame_count, sizeof(uint16_t), 1, lmt);
+                
+                cgltf_node * bone = skin->joints[bone_id];
+                
+                if (mc) {
+                    // Find mirror bone
+                    char * bname = strchr(bone->name, ':');
+                    if (bname) bname++;
+                    else bname = bone->name;
+                    
+                    char mname[16];
+                    strncpy(mname, bname, sizeof(mname));
+                    
+                    char * mep = strchr(mname, '_');
+                    if (mep) {
+                        bool valid_mbone = false;
+                        if (mep[1] == 'a') {
+                            mep[1] = 'b';
+                            valid_mbone = true;
+                        } else if (mep[1] == 'b') {
+                            mep[1] = 'a';
+                            valid_mbone = true;
+                        }
+                        
+                        if (valid_mbone) {
+                            int mbi;
+                            for (mbi = 0; mbi < skin->joints_count; mbi++) {
+                                cgltf_node * mbone = skin->joints[mbi];
+                                
+                                char * mbone_name = strchr(mbone->name, ':');
+                                if (mbone_name) mbone_name++;
+                                else mbone_name = mbone->name;
+                                
+                                if (!strncmp(mbone_name, mname, sizeof(mname))) {
+                                    mbone = mbone;
+                                    break;
+                                }
+                            }
+                            if (mbi == skin->joints_count) {
+                                fprintf(stderr, "Failed to find mirror '%s' of bone: '%s'\n", mname, bone->name);
+                                return 1; // This happens in 0028.lmt, 0176.gltf
+                            }
+                        }
+                    }
                 }
+                
+                printf("Reading %d frames for bone: %s\n", frame_count, bone->name);
+                
+                cgltf_accessor * accs = data->accessors + data->accessors_count;
 
-                uint16_t frame_time;
-                fread(&frame_time, sizeof(uint16_t), 1, lmt);
+                snprintf(name, sizeof(name), "Time_%d_%d", mi, bone_id);
+                if (mc) strcat(name, "M");
+                accs[0].name = strdup(name);
+                accs[0].component_type = cgltf_component_type_r_32f;
+                accs[0].type = cgltf_type_scalar;
+                accs[0].buffer_view = buf_view;
                 
-                float dir[3];
-                fread(dir, sizeof(float), 3, lmt);
+                accs[0].offset = output_offset;
+                accs[0].stride = animation_stride;
                 
-                float pos[3];
-                fread(pos, sizeof(float), 3, lmt);
+                accs[0].min[0] = 0.0f;
+                accs[0].has_min = true;
                 
-                pos[0] /= scale_factor;
-                pos[1] /= scale_factor;
-                pos[2] /= scale_factor;
+                accs[0].max[0] = (float)(motions[mi + 1].max_frame) / fps;
+                accs[0].has_max = true;
+                
+                snprintf(name, sizeof(name), "Translation_%d_%d", mi, bone_id);
+                if (mc) strcat(name, "M");
+                accs[1].name = strdup(name);
+                accs[1].component_type = cgltf_component_type_r_32f;
+                accs[1].type = cgltf_type_vec3;
+                accs[1].buffer_view = buf_view;
+                
+                accs[1].offset = output_offset + sizeof(float);
+                accs[1].stride = animation_stride;
+                
+                snprintf(name, sizeof(name), "Rotation_%d_%d", mi, bone_id);
+                if (mc) strcat(name, "M");
+                accs[2].name = strdup(name);
+                accs[2].component_type = cgltf_component_type_r_32f;
+                accs[2].type = cgltf_type_vec4;
+                accs[2].buffer_view = buf_view;
+                
+                accs[2].offset = output_offset + (4 * sizeof(float));
+                accs[2].stride = animation_stride;
+                
+                data->accessors_count += 3;
 
-                float time = (float)(frame_time) / fps;
-/*
-                printf("Bone %d, Frame %d, Time %f, Pos (%f %f %f), Dir (%f %f %f)\n",
-                    bone_id, frame_time, time,
-                    pos[0], pos[1], pos[2],
-                    dir[0], dir[1], dir[2]);
-*/
-                float quat[4];
-                euler2quat(quat, dir);
+
+                cgltf_animation_sampler * samp = anim->samplers + channel;
                 
-                fwrite(&time, sizeof(float), 1, glbin);
-                fwrite(pos,   sizeof(float), 3, glbin);
-                fwrite(quat,  sizeof(float), 4, glbin);
+                samp[0].input = accs;
+                samp[0].output = accs + 1;
+                samp[0].interpolation = cgltf_interpolation_type_linear;
                 
-                output_offset += animation_stride;
-                output_count++;
+                samp[1].input = accs;
+                samp[1].output = accs + 2;
+                samp[1].interpolation = cgltf_interpolation_type_linear;
+
+                cgltf_animation_channel * chan = anim->channels + channel;
+                
+                chan[0].sampler = samp;
+                chan[0].target_node = bone;
+                chan[0].target_path = cgltf_animation_path_type_translation;
+                
+                chan[1].sampler = samp + 1;
+                chan[1].target_node = bone;
+                chan[1].target_path = cgltf_animation_path_type_rotation;
+                
+                channel += 2;
+                
+                uint32_t output_count = 0;
+                for (int fi = 0; fi < frame_count; fi++) {
+                    uint16_t frame_index;
+                    fread(&frame_index, sizeof(uint16_t), 1, lmt);
+                    
+                    if (frame_index != fi) {
+                        fprintf(stderr, "Frame index %d does not match actual index %d\n", frame_index, fi);
+                        return 1;
+                    }
+
+                    uint16_t frame_time;
+                    fread(&frame_time, sizeof(uint16_t), 1, lmt);
+                    
+                    float dir[3];
+                    fread(dir, sizeof(float), 3, lmt);
+                    
+                    float pos[3];
+                    fread(pos, sizeof(float), 3, lmt);
+                    
+                    pos[0] /= scale_factor;
+                    pos[1] /= scale_factor;
+                    pos[2] /= scale_factor;
+
+                    float time = (float)(frame_time) / fps;
+                    
+                    if (mc) {
+                        pos[0] = -pos[0];
+                        
+                        dir[1] = -dir[1];
+                        dir[2] = -dir[2];
+                    }
+                    
+    /*
+                    printf("Bone %d, Frame %d, Time %f, Pos (%f %f %f), Dir (%f %f %f)\n",
+                        bone_id, frame_time, time,
+                        pos[0], pos[1], pos[2],
+                        dir[0], dir[1], dir[2]);
+    */
+                    float quat[4];
+                    euler2quat(quat, dir);
+                    
+                    fwrite(&time, sizeof(float), 1, glbin);
+                    fwrite(pos,   sizeof(float), 3, glbin);
+                    fwrite(quat,  sizeof(float), 4, glbin);
+                    
+                    output_offset += animation_stride;
+                    output_count++;
+                }
+                
+                for (int i = 0; i < 3; i++) {
+                    accs[i].count = output_count;
+                }
             }
             
-            for (int i = 0; i < 3; i++) {
-                accs[i].count = output_count;
-            }
+            if (!mirror) break;
         }
     }
     
