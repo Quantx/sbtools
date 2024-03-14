@@ -374,7 +374,7 @@ int main(int argc, char ** argv) {
     }
     
     
-    uint8_t * node_ids = NULL;
+    uint8_t * mirror_ids = NULL;
     if (nodeid_section.size) {
         fseek(sbmdl, nodeid_section.offset, SEEK_SET);
         
@@ -383,16 +383,13 @@ int main(int argc, char ** argv) {
             return 1;
         }
     
-        node_ids = malloc(node_count * sizeof(uint8_t));
-        fread(node_ids, sizeof(uint8_t), node_count, sbmdl);
+        mirror_ids = malloc(node_count * sizeof(uint8_t));
+        fread(mirror_ids, sizeof(uint8_t), node_count, sbmdl);
         
-        bool non_sequential = false;
         printf("Read %d node IDs:", node_count);
         for (int ni = 0; ni < node_count; ni++) {
-            printf(" %d", node_ids[ni]);
-            if (node_ids[ni] != ni) non_sequential = true;
+            printf(" %d", mirror_ids[ni]);
         }
-        if (non_sequential) printf(" (non sequential)");
         printf("\n");
     }
     
@@ -508,7 +505,8 @@ int main(int argc, char ** argv) {
     
     for (int ni = 0; ni < node_count; ni++) {
         cgltf_node * node = data.nodes + ni;
-        
+
+        int mirror_id = mirror_ids ? mirror_ids[ni] : ni;
         int special_id = -1;
         for (int nsi = 0; nsi < node_special_count; nsi++) {
             if (node_special[nsi] == ni) {
@@ -517,11 +515,23 @@ int main(int argc, char ** argv) {
             }
         }
 
-        char name[16];        
+        char name[16];
         if (special_id >= 0) {
-            snprintf(name, sizeof(name), "special_%d", special_id);
+            if (mirror_id < ni) {
+                snprintf(name, sizeof(name), "special_%d:%d_a", special_id, mirror_id);
+            } else if (mirror_id > ni) {
+                snprintf(name, sizeof(name), "special_%d:%d_b", special_id, ni);
+            } else {
+                snprintf(name, sizeof(name), "special_%d", special_id);
+            }
         } else {
-            snprintf(name, sizeof(name), "%d", ni);
+            if (mirror_id < ni) {
+                snprintf(name, sizeof(name), "%d_a", mirror_id);
+            } else if (mirror_id > ni) {
+                snprintf(name, sizeof(name), "%d_b", ni);
+            } else {
+                snprintf(name, sizeof(name), "%d", ni);
+            }
         }
         node->name = strdup(name);
 

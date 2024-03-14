@@ -360,6 +360,12 @@ int main(int argc, char ** argv) {
     fclose(lmt);
     fclose(glbin);
     
+    // Remove trailing mirror IDs from specials
+    for (int i = 0; i < skin->joints_count; i++) {
+        char * sep = strchr(skin->joints[i]->name, ':');
+        if (sep) *sep = '\0';
+    }
+    
     result = cgltf_validate(data);
     if (result != cgltf_result_success) {
 	    fprintf(stderr, "Failed to validate glTF data\n");
