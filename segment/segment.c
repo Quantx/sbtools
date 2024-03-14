@@ -41,10 +41,6 @@ struct section_header {
 char out_path[PATH_OUT_MAX];
 #define SEG_NAME_MAX 256
 
-int lengthmatch;
-int testmode;
-int nopadding;
-
 char * helpmsg = "Used pack and unpack the SB executable\n"
 "Show help: segment -h\n"
 "Unpack: segment -u <path/default.xbe>\n"
@@ -370,7 +366,7 @@ int unpack(char * path) {
         }
         
         printf("Extracting section: %s\n", seg_name);
-        printf("Offset %08X, Size %d, Vsize %d, Diff %d\n", sections[i].faddr, sections[i].fsize, sections[i].vsize, sections[i].vsize - sections[i].fsize);
+        printf("Offset %08X, Size %d, Vaddr %08X, Vsize %d, Diff %d\n", sections[i].faddr, sections[i].fsize, sections[i].vaddr, sections[i].vsize, sections[i].vsize - sections[i].fsize);
         printf("Head %08X, Tail %08X\n", sections[i].head_ref_count_addr, sections[i].tail_ref_count_addr);
         
         fseek(xbef, sections[i].faddr, SEEK_SET);
@@ -385,6 +381,20 @@ int unpack(char * path) {
             }
             fputc(data, segf);
         }
+        
+        pr = snprintf(out_path, PATH_OUT_MAX, "%s%c%s.hdr", path, separator, seg_name);
+        if (pr < 0 || pr >= PATH_OUT_MAX) {
+            fprintf(stderr, "Ran out of room when trying to allocate %s%c%s.hdr path\n", path, separator, seg_name);
+            return 1;
+        }
+        
+        FILE * hdrf = fopen(out_path, "wb");
+        if (!hdrf) {
+            fprintf(stderr, "Failed to open %s\n", out_path);
+            return 1;
+        }
+        fwrite(sections + i, sizeof(struct section_header), 1, hdrf);
+        fclose(hdrf);
         
         fclose(segf);
     }

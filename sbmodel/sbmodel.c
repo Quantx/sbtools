@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 #include <math.h>
 
 #define CGLTF_IMPLEMENTATION
@@ -26,7 +27,9 @@
 char path[256];
 
 const unsigned int verts_stride = 8 * sizeof(float) + 8 * sizeof(uint8_t);
-const float scale_factor = 256.0f;
+const float scale_factor = 141.0f;
+
+bool flip_faces = false;
 
 const cgltf_primitive_type prim_type = cgltf_primitive_type_triangle_strip;
 
@@ -94,13 +97,17 @@ int main(int argc, char ** argv) {
     printf("SB Model Tool - By QuantX\n");
 
     if (!argc) {
-        fprintf(stderr, "Please specify an XBO model file: %s <path/example.xbo>\n", progname);
+        fprintf(stderr, "Please specify an XBO model file: %s <path/example.xbo> (--flip)\n", progname);
         return 1;
     }
     
     strncpy(path, *argv, sizeof(path));
     argv++; argc--;
     
+    if (argc && !strcmp(*argv, "--flip")) {
+        flip_faces = true;
+        argv++; argc--;
+    }
     
     FILE * sbmdl = fopen(path, "rb");
     if (!sbmdl) {
@@ -193,6 +200,8 @@ int main(int argc, char ** argv) {
     
     struct primative * verts_out = malloc(mesh_count * sizeof(struct primative));
     
+    bool print_format = false;
+    
     // Mesh data
     for (uint8_t mi = 0; mi < mesh_count; mi++) {
         //fseek(sbmdl, MODEL_HEADER_OFFSET + verts_in[mi].offset, SEEK_SET);
@@ -245,13 +254,18 @@ int main(int argc, char ** argv) {
         uint32_t vert_size;
         fread(&vert_size, sizeof(uint32_t), 1, sbmdl);
 
-        if (format == FORMAT_XBO && vert_size != 20) {
-            printf("Format XBO does not have vert_size of 20, vert_size == %d\n", vert_size);
-        } else if (format == FORMAT_XBO2 && vert_size != 16) {
-            printf("Format XBO2 does not have vert_size of 16, vert_size == %d\n", vert_size);
-        } else if (format == FORMAT_SHA && vert_size != 12) {
-            printf("Format SHA does not have vert_size of 12, vert_size == %d\n", vert_size);
+        if (format == FORMAT_XBO) {
+            if (!print_format) printf("Format is XBO\n");
+            if (vert_size != 20) printf("Format XBO does not have vert_size of 20, vert_size == %d\n", vert_size);
+        } else if (format == FORMAT_XBO2) {
+            if (!print_format) printf("Format is XBO2\n");
+            if (vert_size != 16) printf("Format XBO2 does not have vert_size of 16, vert_size == %d\n", vert_size);
+        } else if (format == FORMAT_SHA) {
+            if (!print_format) printf("Format is SHA\n");
+            if (vert_size != 12) printf("Format SHA does not have vert_size of 12, vert_size == %d\n", vert_size);
         }
+        
+        print_format = true;
         
         int32_t verts = mesh_size;
         
@@ -413,6 +427,13 @@ int main(int argc, char ** argv) {
             for (int ci = 0; ci < inds; ci++) {
                 uint16_t ind;
                 fread(&ind,  sizeof(uint16_t), 1, sbmdl);
+                
+                if (flip_faces && !ci) {
+                    // Reverse the winding order
+                    fwrite(&ind, sizeof(uint16_t), 1, outf);
+                    inds_out[mi].count++;
+                }
+                
                 fwrite(&ind, sizeof(uint16_t), 1, outf);
             }
         } else if (prim_type == cgltf_primitive_type_triangles) {

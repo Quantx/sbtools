@@ -3,6 +3,7 @@
 import os
 import sys
 import subprocess
+import shutil
 
 WINDOWS = os.name == 'nt'
 
@@ -51,7 +52,7 @@ VH_ANIMS = {
 }
 
 def tool_path(tool):
-    if WINDOWS:        
+    if WINDOWS:
         return os.path.join("windows", tool + ".exe")
     return os.path.join("linux", tool)
 
@@ -62,6 +63,12 @@ def main(root_path, out_path):
 
     TERRAIN_PATH = os.path.join(root_path, "media", "BumpData")
 
+    COCKPIT_PATH = os.path.join(root_path, "media", "cockpit")
+    
+    ENGDATA_PATH = os.path.join(root_path, "media", "Eng_data")
+    
+    WEAPDATA_PATH = os.path.join(root_path, "media", "weapon")
+
     # Unpack the XBE
     XBE_PATH = os.path.join(root_path, "default")
     res = subprocess.run([tool_path("segment"), "-u", os.path.join(root_path, "default.xbe")])
@@ -71,6 +78,18 @@ def main(root_path, out_path):
     STAGE_PATH = os.path.join(root_path, "media", "StgData")
     for i in range(0, 31, 1):
         os.replace(os.path.join(XBE_PATH, f"seg{i:02}.seg"), os.path.join(STAGE_PATH, f"seg{i:02}.seg"))
+        
+    # Copy .data segment to Eng_data folder
+    shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(ENGDATA_PATH, f".data.seg"))
+    shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(ENGDATA_PATH, f".data.hdr"))
+
+    # Copy .data segment to Weapon folder
+    shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(WEAPDATA_PATH, f".data.seg"))
+    shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(WEAPDATA_PATH, f".data.hdr"))
+    
+    # Copy .rdata segment to Weapon folder
+    shutil.copy(os.path.join(XBE_PATH, f".rdata.seg"), os.path.join(WEAPDATA_PATH, f".rdata.seg"))
+    shutil.copy(os.path.join(XBE_PATH, f".rdata.hdr"), os.path.join(WEAPDATA_PATH, f".rdata.hdr"))
 
     # Unpack bins
     for bin_name, bin_path in BIN_PATHS.items():
@@ -92,7 +111,7 @@ def main(root_path, out_path):
         model_path = os.path.join(BIN_PATHS["MODEL"], model)
         if ext == ".xbo":
             print("Converting model:", model_path)
-            res = subprocess.run([tool_path("sbmodel"), model_path])
+            res = subprocess.run([tool_path("sbmodel"), model_path, "--flip"])
             if res.returncode != 0: sys.exit(1)
 
     # Convert VT Models
@@ -101,7 +120,7 @@ def main(root_path, out_path):
         model_path = os.path.join(BIN_PATHS["VTMODEL"], model)
         if ext == ".xbo":
             print("Converting model:", model_path)
-            res = subprocess.run([tool_path("sbmodel"), model_path])
+            res = subprocess.run([tool_path("sbmodel"), model_path, "--flip"])
             if res.returncode != 0: sys.exit(1)
 
     # Apply animations
@@ -115,6 +134,7 @@ def main(root_path, out_path):
         res = subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path])
         if res.returncode != 0: sys.exit(1)
 
+    # Weapon animations
     for i, gltf in enumerate([706, 710, 696, 698, 744, 746, 748, 756, 680]):
         lmt = i + 11
         lmt_path = os.path.join(BIN_PATHS["MOTION"], f"{lmt:04}.lmt")
@@ -219,6 +239,9 @@ def main(root_path, out_path):
         maptex = i + 211
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{maptex:04}.tga"), os.path.join(mission_path, "map.tga"))
         
+        mapsmalltex = i + 238
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{mapsmalltex:04}.tga"), os.path.join(mission_path, "map_small.tga"))
+        
         skytex0 = (i * 2) + 265
         try:
             os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{skytex0:04}.tga"), os.path.join(mission_path, "sky0.tga"))
@@ -277,6 +300,9 @@ def main(root_path, out_path):
     os.replace(os.path.join(BIN_PATHS["MODEL"], "1323.gltf"),  os.path.join(cockpit_base_path, "1323.gltf"))
     os.replace(os.path.join(BIN_PATHS["MODEL"], "1323.glbin"), os.path.join(cockpit_base_path, "1323.glbin"))
 
+    # Copy cockpit strings
+    shutil.copy(os.path.join(COCKPIT_PATH, "os.str"), os.path.join(cockpit_base_path, "os.txt"))
+
     # Copy VTs
     mech_base_path = os.path.join(out_path, "mechs")
     for i in range(0, 32, 1):
@@ -300,7 +326,6 @@ def main(root_path, out_path):
             os.replace(os.path.join(BIN_PATHS["MODEL"], f"{vthid:04}.glbin"), os.path.join(mech_path, f"{vthid:04}.glbin"))
     
     # Copy engine data
-    ENGDATA_PATH = os.path.join(root_path, "media", "Eng_data")
     res = subprocess.run([tool_path("sbengine"), "-u", os.path.join(ENGDATA_PATH, "eng_data.eng")])
     if res.returncode != 0: sys.exit(1)
     os.replace(os.path.join(ENGDATA_PATH, "mechdata.json"), os.path.join(mech_base_path, "mechdata.json"))
@@ -314,7 +339,6 @@ def main(root_path, out_path):
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{wepid:04}.glbin"), os.path.join(weapon_path, f"{wepid:04}.glbin"))
     
     # Copy weapon data
-    WEAPDATA_PATH = os.path.join(root_path, "media", "weapon")
     res = subprocess.run([tool_path("sbweapon"), os.path.join(WEAPDATA_PATH, "wepdat.wcb")])
     if res.returncode != 0: sys.exit(1)
     os.replace(os.path.join(WEAPDATA_PATH, "weapondata.json"), os.path.join(weapon_path, "weapondata.json"))

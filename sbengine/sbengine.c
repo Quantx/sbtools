@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <math.h>
+#include <stdbool.h>
 
 #include "jWrite.h"
 
@@ -14,9 +15,12 @@
 #define SEPARATOR '\\'
 #endif
 
+#define LOADOUT_SLOT_COUNT 7
+char * loadoutSlotNames[LOADOUT_SLOT_COUNT] = {"mwep1", "mwep2", "mwep3", "swep1", "swep2", "swep3", "tank"}; //, "part1", "part2"};
+
 char json_buffer[1<<20]; // 1MB
 
-const float ms2kmh = 5.0f / 18.0f;
+const float ms2kmh = 3.6f;
 
 char out_path[256];
 
@@ -28,6 +32,36 @@ char * helpmsg = "Interactive tool used to edit SB engine data files\n"
 "Unpack engine data: sbengine -u eng_data.eng\n"
 "Pack engine data: sbengine -p eng_data\n";
 
+struct section_header {
+    uint32_t flags;
+    // Virtual Address
+    uint32_t vaddr;
+    uint32_t vsize;
+    // File Address
+    uint32_t faddr;
+    uint32_t fsize;
+    // Name Address
+    uint32_t name_addr;
+    uint32_t ref_count;
+    // Shared Reference Count Address
+    uint32_t head_ref_count_addr;
+    uint32_t tail_ref_count_addr;
+    // SHA-1 checksum
+    uint8_t checksum[20];
+};
+
+struct loadout_data {
+    uint32_t mwep_offset;
+    uint32_t swep_offset;
+    uint32_t tank_offset;
+    uint32_t misc_offset;
+    uint8_t padding;
+    uint8_t class; // Light/Medium/Heavy
+    uint8_t type; // 0=Standard, 1=Support, 2=Scout, 3=Assult
+    uint8_t profile_description; // Used to determine profile description (based on which VT you play)
+    uint32_t shoulders; // Number of SWEP shoulder weapons that can be mounted
+} __attribute__((packed));
+
 struct engine_data {
     uint32_t id;
     float weight;
@@ -38,12 +72,12 @@ struct engine_data {
     float min_rpm;
     float override_rpm;
     float override_torque;
-    float shift5_torque;
-    float shift5_start_speed; // What's shown in brainbox2 = shift5_start_speed * 3.6
+    float shift5_torque;      // Output torque = shift5_torque * 50.0
+    float shift5_start_speed; // What's shown in brainbox2 = shift5_start_speed * 3.6 (min speed needed to enter 5th gear)
     float cd;
     float rpm_rate;
-    float width;
     float height;
+    float width;
     float ir;
     uint32_t zero;
     float start_torque;
@@ -75,6 +109,11 @@ struct engine_data {
     float armor_side;
     float armor_rear;
 };
+
+
+
+
+
 
 #define VT_NAME_COUNT 32
 char * vt_names[VT_NAME_COUNT] = {
@@ -126,7 +165,30 @@ int unpack(char * path) {
     
     FILE * outf = fopen(out_path, "w");
     if (!outf) {
-        fprintf(stderr, "failed to open output file: %s\n", out_path);
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    if (sep) strcpy(sep + 1, ".data.hdr");
+    else strcpy(out_path, ".data.hdr");
+    
+    FILE * hdrf = fopen(out_path, "rb");
+    if (!hdrf) {
+        fprintf(stderr, "Failed to open file: %s\n", out_path);
+        return 1;
+    }
+    
+    struct section_header hdr_data;
+    fread(&hdr_data, sizeof(struct section_header), 1, hdrf);
+    
+    fclose(hdrf);
+    
+    if (sep) strcpy(sep + 1, ".data.seg");
+    else strcpy(out_path, ".data.seg");
+    
+    FILE * datf = fopen(out_path, "rb");
+    if (!datf) {
+        fprintf(stderr, "Failed to open file: %s\n", out_path);
         return 1;
     }
     
@@ -134,10 +196,26 @@ int unpack(char * path) {
     uint32_t file_count;
     fread(&file_count, sizeof(uint32_t), 1, engf);
     
-    printf("Unpacking %d engine data files\n", file_count);
+    printf("Unpacking %u engine data files\n", file_count);
     
     uint32_t file_sizes[file_count];
     fread(&file_sizes, sizeof(uint32_t), file_count, engf);
+
+    fseek(datf, 0x345C0, SEEK_SET);    
+    uint32_t manufacturers[file_count];
+    fread(manufacturers, sizeof(uint32_t), file_count, datf);
+    
+    fseek(datf, 0x668E0, SEEK_SET); // Start of loadout data
+    struct loadout_data loadouts[file_count];
+    fread(loadouts, sizeof(struct loadout_data), file_count, datf);
+    
+    fseek(datf, 0x61D70, SEEK_SET);
+    uint32_t loadout_presets[file_count];
+    fread(loadout_presets, sizeof(uint32_t), file_count, datf);
+    
+    fseek(datf, 0x61E00, SEEK_SET);
+    uint32_t loadout_fixed_mounts[file_count];
+    fread(loadout_fixed_mounts, sizeof(uint32_t), file_count, datf);
     
     jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
     
@@ -152,7 +230,15 @@ int unpack(char * path) {
         
         jwArr_object();
         
+        uint8_t gens[6] = {0, 1, 2, 1, 0, 1};
+        
         jwObj_int("id", engdat.id);
+        jwObj_int("manufacturer", manufacturers[i]);
+        jwObj_int("gen", gens[engdat.cockpit_type]);
+        jwObj_int("class", loadouts[i].class);
+        jwObj_int("type", loadouts[i].type);
+        jwObj_int("profile_description", loadouts[i].profile_description);
+        jwObj_int("shoulders", loadouts[i].shoulders);
         jwObj_double("weight", engdat.weight);
         jwObj_double("tier_r", engdat.tier_r);
         jwObj_double("gear_r", engdat.gears[0]);
@@ -173,6 +259,7 @@ int unpack(char * path) {
         jwObj_double("width", engdat.width);
         jwObj_double("height", engdat.height);
         jwObj_double("ir", engdat.ir);
+        jwObj_double("start_torque", engdat.start_torque);
         jwObj_double("rpm1", engdat.rpm1);
         jwObj_double("torque1", engdat.torque1);
         jwObj_double("rpm2", engdat.rpm2);
@@ -196,17 +283,65 @@ int unpack(char * path) {
         jwObj_int("saka_a", engdat.saka_a);
         jwObj_int("saka_b", engdat.saka_b);
         jwObj_int("price", engdat.price);
-        jwObj_int("max_loadout", engdat.max_loadout);
-        jwObj_int("standard_loadout", engdat.standard_loadout);
         jwObj_double("armor_side", engdat.armor_side);
         jwObj_double("armor_rear", engdat.armor_rear);
 
+        jwObj_object("loadout"); // Start of loadout
+
+        jwObj_int("standard", engdat.standard_loadout);
+        jwObj_int("max", engdat.max_loadout);
+
+        int8_t item;
+        
+        jwObj_array("mweps");
+        fseek(datf, loadouts[i].mwep_offset - hdr_data.vaddr, SEEK_SET);
+        while ((item = fgetc(datf)) >= -1 ) {
+            jwArr_int(item);
+        }
+        jwEnd();
+
+        jwObj_array("sweps");
+        fseek(datf, loadouts[i].swep_offset - hdr_data.vaddr, SEEK_SET);
+        while ((item = fgetc(datf)) >= -1) {
+            jwArr_int(item);
+        }
         jwEnd();
         
+        jwObj_array("tanks");
+        fseek(datf, loadouts[i].tank_offset - hdr_data.vaddr, SEEK_SET);
+        while ((item = fgetc(datf)) >= -1) {
+            jwArr_int(item);
+        }
+        jwEnd();
+        
+        int8_t preset[LOADOUT_SLOT_COUNT];
+        fseek(datf, loadout_presets[i] - hdr_data.vaddr, SEEK_SET);
+        fread(preset, sizeof(int8_t), LOADOUT_SLOT_COUNT, datf);
+        
+        int8_t fixed[LOADOUT_SLOT_COUNT];
+        bool fixed_valid = loadout_fixed_mounts[i] - hdr_data.vaddr < hdr_data.fsize;
+        
+        if (fixed_valid) {
+            fseek(datf, loadout_fixed_mounts[i] - hdr_data.vaddr, SEEK_SET);
+            fread(fixed, sizeof(int8_t), LOADOUT_SLOT_COUNT, datf);
+            printf("VT %d preset with fixed mounts: Preset %08X, Fixed %08X\n", engdat.id, loadout_presets[i] - hdr_data.vaddr, loadout_fixed_mounts[i] - hdr_data.vaddr);
+        }
+
+        for (int li = 0; li < LOADOUT_SLOT_COUNT; li++) {
+            jwObj_object(loadoutSlotNames[li]);
+            jwObj_int("type", preset[li]);
+            jwObj_bool("fixed", fixed_valid ? fixed[li] : false);
+            jwEnd();
+        }
+
+        jwEnd(); // Loadout object end
+
+        jwEnd(); // Array entry end        
         unpack_count++;
     }
 
     fclose(engf);
+    fclose(datf);
     
     printf("Unpacked %d engine data entries\n", unpack_count);
     
@@ -341,10 +476,10 @@ int main(int argc, char ** argv) {
             printf("Torque 1: %.2fkgm\n", vt->torque1);
             printf("RPM 2: %.2frpm\n", vt->rpm2);
             printf("Torque 2: %.2fkgm\n", vt->torque2);
-            printf("Max RPM: %.2fkgm\n", vt->max_rpm);
+            printf("Max RPM: %.2frpm\n", vt->max_rpm);
             printf("Torque 3: %.2fkgm\n", vt->torque3);
             printf("Shift 5 Torque: %.2fkgm\n", vt->shift5_torque);
-            printf("Shift 5 Start Speed: %.2fkm/h\n", vt->shift5_start_speed * 3.6f);
+            printf("Shift 5 Start Speed: %.2fkm/h\n", vt->shift5_start_speed * ms2kmh);
             printf("Override RPM: %.2frpm\n", vt->override_rpm);
             printf("Override Torque Rate: %.2f\n", vt->override_torque);
             printf("Saka A: %d\n", vt->saka_a);
@@ -375,9 +510,10 @@ int main(int argc, char ** argv) {
         if (vt->tier_r > 0) {
             printf("\x1B[39C Speed  |     Normal |   Override\n");
             for (int g = 0; g < 6; g++) {
-                float normal = (vt->max_rpm * vt->tier_r * 0.05f) / (vt->gear_f * vt->gears[g]);
-                float override = (vt->override_rpm * vt->tier_r * 0.05f) / (vt->gear_f * vt->gears[g]);
-                printf("\x1B[39C Gear %c | %6.2fkm/h | %6.2fkm/h\n", g ? '0' + g : 'R', normal / ms2kmh, override / ms2kmh);
+                float divisor = vt->gear_f * vt->gears[g] * vt->tier_r * 433.0;
+                float normal = vt->max_rpm / divisor;
+                float override = vt->override_rpm / divisor;
+                printf("\x1B[39C Gear %c | %6.2fkm/h | %6.2fkm/h\n", g ? '0' + g : 'R', normal * ms2kmh, override * ms2kmh);
             }
             
             float torques[] = {

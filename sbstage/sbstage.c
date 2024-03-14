@@ -85,7 +85,7 @@ int unpackSEG(long map) {
     //  806 - 1175 | Common map objects
     // 1176 - 1185 | Objective specific objects
     
-    jwObj_array("stage");
+    jwObj_array("objects");
     
     int obj_count;
     for (obj_count = 0; 1; obj_count++) {
@@ -362,6 +362,10 @@ int main(int argc, char ** argv) {
     }
 
     jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
+
+    // All default maps are this size
+    jwObj_int("width", 280);
+    jwObj_int("height", 280);
 
     jwObj_array("stage");
     for (int i = 0; i < 4; i++) {

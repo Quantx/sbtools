@@ -19,9 +19,9 @@
 #define access _access
 #endif
 
-const float fps = 30.0f;
+const float fps = 20.0f;
 const int animation_stride = 8 * sizeof(float);
-const float scale_factor = 256.0f;
+const float scale_factor = 141.0f;
 
 struct motion {
     uint32_t offset;
@@ -207,7 +207,8 @@ int main(int argc, char ** argv) {
     
     for (int mi = 0; mi < motion_count; mi++) {
         if (ftell(lmt) != motions[mi].offset) {
-            printf("Wrong motion offset %08lX expected %08X\n", ftell(lmt), motions[mi].offset);
+            fprintf(stderr, "Wrong motion offset %08lX expected %08X\n", ftell(lmt), motions[mi].offset);
+            return 1;
         }
 
         cgltf_animation * anim = data->animations + mi;
@@ -288,21 +289,21 @@ int main(int argc, char ** argv) {
             
             samp[0].input = accs;
             samp[0].output = accs + 1;
-            samp[0].interpolation = cgltf_interpolation_type_linear; // TODO Verify this
+            samp[0].interpolation = cgltf_interpolation_type_linear;
             
             samp[1].input = accs;
             samp[1].output = accs + 2;
-            samp[1].interpolation = cgltf_interpolation_type_linear; // TODO Verify this
+            samp[1].interpolation = cgltf_interpolation_type_linear;
 
             cgltf_animation_channel * chan = anim->channels + channel;
             
             chan[0].sampler = samp;
             chan[0].target_node = skin->joints[bone_id];
-            chan[0].target_path = cgltf_animation_path_type_translation; // TODO Verify this
+            chan[0].target_path = cgltf_animation_path_type_translation;
             
             chan[1].sampler = samp + 1;
             chan[1].target_node = skin->joints[bone_id];
-            chan[1].target_path = cgltf_animation_path_type_rotation; // TODO Verify this
+            chan[1].target_path = cgltf_animation_path_type_rotation;
             
             channel += 2;
             
@@ -311,7 +312,10 @@ int main(int argc, char ** argv) {
                 uint16_t frame_index;
                 fread(&frame_index, sizeof(uint16_t), 1, lmt);
                 
-                if (frame_index != fi) fprintf(stderr, "Frame index %d does not match actual index %d\n", frame_index, fi);
+                if (frame_index != fi) {
+                    fprintf(stderr, "Frame index %d does not match actual index %d\n", frame_index, fi);
+                    return 1;
+                }
 
                 uint16_t frame_time;
                 fread(&frame_time, sizeof(uint16_t), 1, lmt);
