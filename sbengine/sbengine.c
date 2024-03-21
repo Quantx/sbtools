@@ -59,7 +59,7 @@ struct loadout_data {
     uint8_t class; // Light/Medium/Heavy
     uint8_t type; // 0=Standard, 1=Support, 2=Scout, 3=Assult
     uint8_t profile_description; // Used to determine profile description (based on which VT you play)
-    uint32_t shoulders; // Number of SWEP shoulder weapons that can be mounted
+    uint32_t mounts; // Number of SWEP shoulder weapons that can be mounted
 } __attribute__((packed));
 
 struct engine_data {
@@ -238,7 +238,6 @@ int unpack(char * path) {
         jwObj_int("class", loadouts[i].class);
         jwObj_int("type", loadouts[i].type);
         jwObj_int("profile_description", loadouts[i].profile_description);
-        jwObj_int("shoulders", loadouts[i].shoulders);
         jwObj_double("weight", engdat.weight);
         jwObj_double("tier_r", engdat.tier_r);
         jwObj_double("gear_r", engdat.gears[0]);
@@ -288,6 +287,7 @@ int unpack(char * path) {
 
         jwObj_object("loadout"); // Start of loadout
 
+        jwObj_int("mounts", loadouts[i].mounts);
         jwObj_int("standard", engdat.standard_loadout);
         jwObj_int("max", engdat.max_loadout);
 

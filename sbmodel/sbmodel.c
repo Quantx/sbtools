@@ -27,7 +27,7 @@
 char path[256];
 
 const unsigned int verts_stride = 8 * sizeof(float) + 8 * sizeof(uint8_t);
-const float scale_factor = 141.0f;
+const float scale_factor = 100.0f;
 
 bool flip_faces = false;
 

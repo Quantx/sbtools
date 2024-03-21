@@ -27,6 +27,9 @@ make win -C sbengine
 make -C sbweapon
 make win -C sbweapon
 
+make -C sbhitbox
+make win -C sbhitbox
+
 # Create output directories
 mkdir -p sbtools
 mkdir -p sbtools/linux
@@ -60,7 +63,11 @@ cp sbengine/sbengine sbtools/linux/sbengine
 cp sbweapon/sbweapon.exe sbtools/windows/sbweapon.exe
 cp sbweapon/sbweapon sbtools/linux/sbweapon
 
+cp sbhitbox/sbhitbox.exe sbtools/windows/sbhitbox.exe
+cp sbhitbox/sbhitbox sbtools/linux/sbhitbox
+
 cp package.py sbtools/package.py
+cp export_presets.cfg sbtools/export_presets.cfg
 
 # Zip output directory
 rm sbtools.zip

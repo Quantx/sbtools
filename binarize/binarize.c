@@ -226,6 +226,7 @@ int unpack(char * path) {
     
     bool is_motion = strstr(path, "MOTION.bin") != NULL;
     bool is_vtmodel = strstr(path, "VTMODEL.bin") != NULL;
+    bool is_hitbox = strstr(path, "ATARI.bin") != NULL;
 
     // Validate magic
     char magic[4];
@@ -330,6 +331,7 @@ int unpack(char * path) {
             }
         } else if (is_motion) ext = "lmt";
         else if (is_vtmodel && i >= 764) ext = "lmt";
+        else if (is_hitbox) ext = "ppd";
 
         pr = snprintf(out_path, MAX_OUT_PATH, "%s%04d.%s", path, i, ext);
         if (pr < 0 || pr >= MAX_OUT_PATH) {

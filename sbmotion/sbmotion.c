@@ -21,7 +21,7 @@
 
 const float fps = 20.0f;
 const int animation_stride = 8 * sizeof(float);
-const float scale_factor = 141.0f;
+const float scale_factor = 100.0f;
 
 struct motion {
     uint32_t offset;
