@@ -307,8 +307,8 @@ int unpackSTG(long map, int tod) {
     fread(&fval, sizeof(float), 1, stgf);
     jwObj_double("clip_side_ex", fval);
     
-    fread(&ival, sizeof(uint32_t), 1, stgf);
-    jwObj_int("integer_0xEC", ival);
+    fread(&fval, sizeof(float), 1, stgf);
+    jwObj_double("float_0xEC", fval);
 
     fread(&ival, sizeof(uint32_t), 1, stgf);
     jwObj_int("integer_0xF0", ival);

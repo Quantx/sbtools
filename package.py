@@ -457,7 +457,8 @@ def main(godot_path, root_path):
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0322.tga"), os.path.join(effect_path, "eject.tga"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0107.tga"), os.path.join(effect_path, "spritesheet0.tga"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0108.tga"), os.path.join(effect_path, "spritesheet1.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0111.tga"), os.path.join(effect_path, "sun.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0111.tga"), os.path.join(effect_path, "flash.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0109.tga"), os.path.join(effect_path, "scanlines.tga"))
 
     for i in range(1186, 1236, 2):
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.gltf"),  os.path.join(effect_path, f"{i:04}.gltf"))
@@ -470,6 +471,7 @@ def main(godot_path, root_path):
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0114.tga"), os.path.join(ui_path, "controller.tga"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0132.tga"), os.path.join(ui_path, "spritesheet0.tga"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0318.tga"), os.path.join(ui_path, "spritesheet1.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0110.tga"), os.path.join(ui_path, "loading.tga"))
 
     # Copy Emblems
     emblem_path = os.path.join(out_path, "emblems")
