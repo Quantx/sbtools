@@ -291,7 +291,7 @@ int main(int argc, char ** argv) {
                                 else mbone_name = mbone->name;
                                 
                                 if (!strncmp(mbone_name, mname, sizeof(mname))) {
-                                    mbone = mbone;
+                                    bone = mbone;
                                     break;
                                 }
                             }
