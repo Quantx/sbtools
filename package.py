@@ -205,7 +205,7 @@ def main(godot_path, root_path):
                 if res.returncode != 0: sys.exit(1)
 
     # Cockpit Animations
-    for r in [(90, 1237, 33), (123, 1271, 36), (159, 1310, 11), (170, 1322, 2)]:
+    for r in [(90, 1237, 33), (123, 1271, 9), (132, 1281, 14), (146, 1296, 13), (159, 1310, 11), (170, 1322, 2)]:
         for i in range(0, r[2], 1):
             lmt = i + r[0]
             lmt_path = os.path.join(BIN_PATHS["MOTION"], f"{lmt:04}.lmt")
@@ -338,19 +338,27 @@ def main(godot_path, root_path):
         if not os.path.isdir(cockpit_path):
             os.makedirs(cockpit_path)
     
-        uitex = i + 126
+        texid = i
+
+        # Gen 2 / Jar have swapped textures
+        if i == 3:
+            texid = 5
+        elif i == 5:
+            texid = 3
+
+        uitex = texid + 126
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{uitex:04}.tga"), os.path.join(cockpit_path, "ui.tga"))
         
-        tex0 = (i * 2) + 133
+        tex0 = (texid * 2) + 133
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{tex0:04}.tga"), os.path.join(cockpit_path, "texture0.tga"))
         
-        tex1 = (i * 2) + 134
+        tex1 = (texid * 2) + 134
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{tex1:04}.tga"), os.path.join(cockpit_path, "texture1.tga"))
         
-        disp0 = (i * 2) + 145
+        disp0 = (texid * 2) + 145
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{disp0:04}.tga"), os.path.join(cockpit_path, "display0.tga"))
         
-        disp1 = (i * 2) + 146
+        disp1 = (texid * 2) + 146
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{disp1:04}.tga"), os.path.join(cockpit_path, "display1.tga"))
     
         objstart = cockpit_objs[i]
