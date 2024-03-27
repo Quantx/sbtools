@@ -333,7 +333,7 @@ def main(godot_path, root_path):
     # Copy cockpits
     cockpit_base_path = os.path.join(out_path, "cockpit")
     cockpit_objs = [1238, 1256, 1271, 1284, 1298, 1310, 1322]
-    for i, name in enumerate(["gen1", "gen2", "gen3", "gen2s", "gen1s", "jar"]):
+    for i, name in enumerate(["gen1", "gen2", "gen3", "jar", "gen1s", "gen2s"]):
         cockpit_path = os.path.join(cockpit_base_path, name)
         if not os.path.isdir(cockpit_path):
             os.makedirs(cockpit_path)
