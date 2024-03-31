@@ -230,11 +230,22 @@ int unpack(char * path) {
         
         jwArr_object();
         
-        uint8_t gens[6] = {0, 1, 2, 1, 0, 1};
+        const uint8_t gens[6] = {0, 1, 2, 1, 0, 1};
+        uint8_t gen = gens[engdat.cockpit_type];
+
+        if (engdat.id == 21) { // Behemoth is too slow
+            const float speedFactor = 1.18;
+            engdat.rpm1 *= speedFactor;
+            engdat.rpm2 *= speedFactor;
+            engdat.max_rpm *= speedFactor;
+            engdat.override_rpm *= speedFactor;
+        } else if (engdat.id == 28) { // Macabre is technically a Gen 3
+            gen = 2;
+        }
         
         jwObj_int("id", engdat.id);
         jwObj_int("manufacturer", manufacturers[i]);
-        jwObj_int("gen", gens[engdat.cockpit_type]);
+        jwObj_int("gen", gen);
         jwObj_int("class", loadouts[i].class);
         jwObj_int("type", loadouts[i].type);
         jwObj_int("profile_description", loadouts[i].profile_description);
