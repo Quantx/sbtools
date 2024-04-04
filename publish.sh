@@ -15,6 +15,9 @@ make win -C sbmotion
 make -C sbtexture
 make win -C sbtexture
 
+make -C sbtext
+make win -C sbtext
+
 make -C sbterrain
 make win -C sbterrain
 
@@ -50,6 +53,9 @@ cp sbmotion/sbmotion sbtools/linux/sbmotion
 
 cp sbtexture/sbtexture.exe sbtools/windows/sbtexture.exe
 cp sbtexture/sbtexture sbtools/linux/sbtexture
+
+cp sbtext/sbtext.exe sbtools/windows/sbtext.exe
+cp sbtext/sbtext sbtools/linux/sbtext
 
 cp sbterrain/sbterrain.exe sbtools/windows/sbterrain.exe
 cp sbterrain/sbterrain sbtools/linux/sbterrain

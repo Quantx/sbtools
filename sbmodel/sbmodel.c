@@ -67,30 +67,6 @@ void euler2quat(float quat[4], float euler[3]) {
     quat[3] = cx * cy * cz + sx * sy * sz; // W
 }
 
-/*
-#define BONE_NAME_COUNT 18
-char * bone_names[BONE_NAME_COUNT] = {
-    "body",
-    "r_mwep",
-    "l_mwep",
-    "swep",
-    "r_shoulder",
-    "l_shoulder",
-    "back_camera",
-    "manipulator",
-    "high_front",
-    "front_camera",
-    "r_tank",
-    "l_tank",
-    "cockpit",
-    "back_center",
-    "r_foot",
-    "l_foot",
-    "emblem",
-    "high_back"
-};
-*/
-
 int main(int argc, char ** argv) {
     progname = *argv++; argc--;
 

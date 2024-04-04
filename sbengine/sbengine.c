@@ -110,10 +110,14 @@ struct engine_data {
     float armor_rear;
 };
 
-
-
-
-
+struct parts_data {
+    uint32_t mwep_holder;
+    uint32_t unknown0;
+    uint32_t unknown1;
+    float size_offset;
+    uint32_t manipulator;
+    float size[3];
+};
 
 #define VT_NAME_COUNT 32
 char * vt_names[VT_NAME_COUNT] = {
@@ -217,6 +221,10 @@ int unpack(char * path) {
     uint32_t loadout_fixed_mounts[file_count];
     fread(loadout_fixed_mounts, sizeof(uint32_t), file_count, datf);
     
+    fseek(datf, 0x57A38, SEEK_SET);
+    struct parts_data parts[file_count];
+    fread(parts, sizeof(struct parts_data), file_count, datf);
+    
     jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
     
     // Read each engine data entry
@@ -239,8 +247,6 @@ int unpack(char * path) {
             engdat.rpm2 *= speedFactor;
             engdat.max_rpm *= speedFactor;
             engdat.override_rpm *= speedFactor;
-        } else if (engdat.id == 28) { // Macabre is technically a Gen 3
-            gen = 2;
         }
         
         jwObj_int("id", engdat.id);
@@ -296,34 +302,44 @@ int unpack(char * path) {
         jwObj_double("armor_side", engdat.armor_side);
         jwObj_double("armor_rear", engdat.armor_rear);
 
-        jwObj_object("loadout"); // Start of loadout
-
-        jwObj_int("mounts", loadouts[i].mounts);
-        jwObj_int("standard", engdat.standard_loadout);
-        jwObj_int("max", engdat.max_loadout);
-
-        int8_t item;
-        
-        jwObj_array("mweps");
-        fseek(datf, loadouts[i].mwep_offset - hdr_data.vaddr, SEEK_SET);
-        while ((item = fgetc(datf)) >= -1 ) {
-            jwArr_int(item);
-        }
+        jwObj_int("mwep_holder", parts[i + 1].mwep_holder); // No idea why the +1 needs to be here, but it's in the source code too
+        jwObj_int("manipulator", parts[i].manipulator);
+        // jwObj_int("unknown0", parts[i].unknown0);
+        // jwObj_int("unknown1", parts[i].unknown1); // unknown1 = id + 1 | No need to save it
+        jwObj_double("size_offset", parts[i].size_offset / 100.0);
+        jwObj_array("size");
+            jwArr_double(parts[i].size[0] / 100.0);
+            jwArr_double(parts[i].size[1] / 100.0);
+            jwArr_double(parts[i].size[2] / 100.0);
         jwEnd();
 
-        jwObj_array("sweps");
-        fseek(datf, loadouts[i].swep_offset - hdr_data.vaddr, SEEK_SET);
-        while ((item = fgetc(datf)) >= -1) {
-            jwArr_int(item);
-        }
-        jwEnd();
-        
-        jwObj_array("tanks");
-        fseek(datf, loadouts[i].tank_offset - hdr_data.vaddr, SEEK_SET);
-        while ((item = fgetc(datf)) >= -1) {
-            jwArr_int(item);
-        }
-        jwEnd();
+        jwObj_object("loadout"); { // Start of loadout
+            jwObj_int("mounts", loadouts[i].mounts);
+            jwObj_int("standard", engdat.standard_loadout);
+            jwObj_int("max", engdat.max_loadout);
+
+            int8_t item;
+            
+            jwObj_array("mweps");
+            fseek(datf, loadouts[i].mwep_offset - hdr_data.vaddr, SEEK_SET);
+            while ((item = fgetc(datf)) >= -1 ) {
+                jwArr_int(item);
+            }
+            jwEnd();
+
+            jwObj_array("sweps");
+            fseek(datf, loadouts[i].swep_offset - hdr_data.vaddr, SEEK_SET);
+            while ((item = fgetc(datf)) >= -1) {
+                jwArr_int(item);
+            }
+            jwEnd();
+            
+            jwObj_array("tanks");
+            fseek(datf, loadouts[i].tank_offset - hdr_data.vaddr, SEEK_SET);
+            while ((item = fgetc(datf)) >= -1) {
+                jwArr_int(item);
+            }
+        } jwEnd();
         
         int8_t preset[LOADOUT_SLOT_COUNT];
         fseek(datf, loadout_presets[i] - hdr_data.vaddr, SEEK_SET);
