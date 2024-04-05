@@ -58,7 +58,7 @@ struct __attribute__((__packed__)) weapon_data {
     float max_speed;
     float acceleration;
     float gravity_acceleration;
-    float gun_barrel_movement_angle;
+    float torso_turn_rate;
     float range_at_which_damage_type_applies;
     float max_range;
     float min_range;
@@ -266,7 +266,7 @@ int main(int argc, char ** argv) {
             jwObj_double("max_speed", wep.max_speed);
             jwObj_double("acceleration", wep.acceleration);
             jwObj_double("gravity_acceleration", wep.gravity_acceleration);
-            jwObj_double("gun_barrel_movement_angle", wep.gun_barrel_movement_angle);
+            jwObj_double("torso_turn_rate", wep.torso_turn_rate);
             jwObj_double("range_at_which_damage_type_applies", wep.range_at_which_damage_type_applies);
             jwObj_double("max_range", wep.max_range);
             jwObj_double("min_range", wep.min_range);

@@ -264,6 +264,10 @@ def main(godot_path, root_path):
     # Touch the Godot project file, it has no contents
     with open(os.path.join("build", "project.godot"), "w") as file: pass
     
+    # Extract strings
+    res = subprocess.run([tool_path("sbtext"), os.path.join(XBE_PATH, ""), os.path.join(out_path, "strings.csv")])
+    if res.returncode != 0: sys.exit(1)
+    
     # Copy all map data
     STAGE_PATH = os.path.join(root_path, "media", "StgData", "") # The Extra string forces a trailing slash
     for i in range(0, 25, 1):

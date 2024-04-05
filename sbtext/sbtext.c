@@ -40,9 +40,12 @@ char buf16[BUF16_LEN];
 char buf8[BUF8_LEN];
 
 char * progname;
+char * in_path;
 char * out_path;
 
-void convert_string(FILE * outf) {    
+char path[256];
+
+void convert_string(void) {
 #ifdef __linux__
     size_t buf16_len = BUF16_LEN;
     size_t buf8_len = BUF8_LEN;
@@ -56,34 +59,47 @@ void convert_string(FILE * outf) {
 #else
     WideCharToMultiByte(CP_UTF8, 0, (uint16_t *)buf16, BUF16_LEN / 2, buf8, BUF8_LEN, NULL, NULL);
 #endif
+}
+
+void output_string(FILE * outf, bool is_english) {
+    if (is_english) fputc('"', outf);
 
     for (int j = 0; buf8[j]; j++) {
         switch (buf8[j]) {
-        case '\n': fprintf(outf, "\\n"); break;
+        case '\n':
+            fprintf(outf, "\\n");
+            break;
         case '\v':
         case '\t':
         case '\a':
             fprintf(outf, "%%s");
             j++;
             break;
+        case '"':
+            fprintf(outf, "\"\"");
+            break;
         default:
             fputc(buf8[j], outf);
         }
     }
+    
+    if (is_english) fputc('"', outf);
 }
 
 int main(int argc, char ** argv) {
     progname = *argv++; argc--;
     
-    if (!argc) {
-        fprintf(stderr, "Usage: ./%s <strings.csv>\n", progname);
+    if (argc != 2) {
+        fprintf(stderr, "Usage: ./%s <path/default/> <strings.csv>\n", progname);
     }
     
+    in_path  = *argv++; argc--;
     out_path = *argv++; argc--;
 
-    FILE * datf = fopen(".data.seg", "rb");
+    snprintf(path, sizeof(path), "%s.data.seg", in_path);
+    FILE * datf = fopen(path, "rb");
     if (!datf) {
-        fprintf(stderr, "Failed to open: .data.seg\n");
+        fprintf(stderr, "Failed to open: '%s'\n", path);
         return 1;
     }
     
@@ -91,10 +107,11 @@ int main(int argc, char ** argv) {
     fread(string_pointers, sizeof(struct string_pair), STRING_COUNT, datf);
     
     fclose(datf);
-    
-    FILE * hdrf = fopen(".rdata.hdr", "rb");
+
+    snprintf(path, sizeof(path), "%s.rdata.hdr", in_path);
+    FILE * hdrf = fopen(path, "rb");
     if (!hdrf) {
-        fprintf(stderr, "Failed to open: .data.hdr\n");
+        fprintf(stderr, "Failed to open: '%s'\n", path);
         return 1;
     }
     
@@ -103,36 +120,67 @@ int main(int argc, char ** argv) {
     
     fclose(hdrf);
     
-    FILE * rdatf = fopen(".rdata.seg", "rb");
+    snprintf(path, sizeof(path), "%s.rdata.seg", in_path);
+    FILE * rdatf = fopen(path, "rb");
     if (!rdatf) {
-        fprintf(stderr, "Failed to open: .rdata.seg\n");
+        fprintf(stderr, "Failed to open: '%s'\n", path);
         return 1;
     }
     
     FILE * outf = fopen(out_path, "w");
     if (!outf) {
-        fprintf(stderr, "Failed to open: %s\n", out_path);
+        fprintf(stderr, "Failed to open: '%s'\n", out_path);
         return 1;
     }
     
-    fprintf(outf, "keys,jp,en\n");
+    fprintf(outf, "keys,ja,en\n");
     
     for (int i = 0; i < STRING_COUNT; i++) {
-        fprintf(outf, "%04d;", i);
+        if (i < 6) continue;
+        
+        uint16_t jp_present = 0;
         if (string_pointers[i].jp) {
+            fseek(rdatf, string_pointers[i].jp - hdr_data.vaddr, SEEK_SET);
+            // Ensure string is at least 2 chars long
+            fread(&jp_present, sizeof(uint16_t), 1, rdatf);
+            if (jp_present) fread(&jp_present, sizeof(uint16_t), 1, rdatf);
+        }
+        
+        uint16_t en_present = 0;
+        if (string_pointers[i].en) {
+            fseek(rdatf, string_pointers[i].en - hdr_data.vaddr, SEEK_SET);
+            // Ensure string is at least 2 chars long
+            fread(&en_present, sizeof(uint16_t), 1, rdatf);
+            if (en_present) fread(&en_present, sizeof(uint16_t), 1, rdatf);
+        }
+        
+        // Both are missing, skip this
+        if (!en_present && !jp_present) continue;
+        
+        fprintf(outf, "%04d,", i);
+        
+        if (jp_present) {
             fseek(rdatf, string_pointers[i].jp - hdr_data.vaddr, SEEK_SET);
             fread(buf16, sizeof(char), BUF16_LEN, rdatf);
             
-            convert_string(outf);
+            convert_string();
+
+            output_string(outf, false);
+            fprintf(outf, ",");
+            if (!en_present) output_string(outf, false);
         }
         
-        fprintf(outf, ";");
-        
-        if (string_pointers[i].en) {
+        if (en_present) {
             fseek(rdatf, string_pointers[i].en - hdr_data.vaddr, SEEK_SET);
             fread(buf16, sizeof(char), BUF16_LEN, rdatf);
             
-            convert_string(outf);
+            convert_string();
+            
+            output_string(outf, true);
+            if (!jp_present) {
+                fprintf(outf, ",");
+                output_string(outf, true);
+            }
         }
         
         fprintf(outf, "\n");
