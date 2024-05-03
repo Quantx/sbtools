@@ -362,15 +362,17 @@ int main(int argc, char ** argv) {
         mirror_ids = malloc(node_count * sizeof(uint8_t));
         fread(mirror_ids, sizeof(uint8_t), node_count, sbmdl);
         
-        printf("Read %d node IDs:", node_count);
+        printf("Read %d mirror node IDs:", node_count);
         for (int ni = 0; ni < node_count; ni++) {
             int mi = mirror_ids[ni];
-            printf(" %d", mi);
             
             // Fixup mirror IDs
             if (mi != ni && mirror_ids[mi] == mi) {
                 mirror_ids[mi] = ni;
             }
+            
+            if (mi == ni) printf(" XX"); 
+            else printf(" %02d", mi);
         }
         printf("\n");
     }

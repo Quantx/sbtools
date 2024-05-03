@@ -119,6 +119,12 @@ struct parts_data {
     float size[3];
 };
 
+
+
+
+
+
+
 #define VT_NAME_COUNT 32
 char * vt_names[VT_NAME_COUNT] = {
     "Vitzh",

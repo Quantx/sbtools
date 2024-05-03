@@ -59,34 +59,35 @@ struct __attribute__((__packed__)) weapon_data {
     float acceleration;
     float gravity_acceleration;
     float torso_turn_rate;
-    float range_at_which_damage_type_applies;
+    float damage_type_range;
     float max_range;
     float min_range;
     uint16_t offensive_power;
     uint16_t rapid_fire;
-    uint16_t fire_interval;
-    uint16_t shooting_interval;
-    uint16_t number_of_simultaneous_shots;
-    uint16_t time_to_shift_when_firing_at_the_same_time;
+    uint16_t firing_interval;
+    uint16_t reload_interval;
+    uint16_t volley_count;
+    uint16_t volley_interval;
     uint8_t unknown0;
     uint8_t impact_effect;
     uint16_t number_of_bullets;
     uint16_t number_of_mags;
-    uint16_t ranged_weapon_range_damage;
+    uint16_t offensive_power_falloff;
     uint8_t weight;
     uint8_t fire_probability;
-    uint16_t additional_damage_when_on_fire;
+    uint16_t fire_damage;
     uint8_t unknown1;
-    uint8_t rear_end;
-    uint16_t simultaneous_flight;
-    float horizontal_length_of_simultaneous_firing;
-    float vertical_length_of_simultaneous_firing;
+    uint8_t tracking;
+    uint16_t volley_spread;
+    float horizontal_muzzle_offset;
+    float vertical_muzzle_offset;
     float retraction;
-    uint32_t damage_type;
-    uint8_t trajectory;
-    uint8_t firing_effect;
-    uint8_t next_to_simultaneous_firing;
-    uint8_t simultaneous_vertical_firing;
+    uint16_t damage_type;
+    uint16_t firing_delay;
+    uint8_t category; // Also called "trajectory"
+    uint8_t flying_effect;
+    uint8_t horizontal_muzzle_count;
+    uint8_t vertical_muzzle_count;
 };
 
 #define WEP_CLASS_COUNT 3
@@ -257,6 +258,11 @@ int main(int argc, char ** argv) {
             
             printf("WE %d | ID %02d: Weapon %04d, Bullet %04d, Flags: %04X, Name: \"%s\"\n", we, i, weapon_offset, bullet_offset, weapon_atribs.flags, name);
             
+            if (wep.unknown0 || wep.unknown1) {
+                fprintf(stderr, "WEP unknown was non zero, id: %d\n", wep.id);
+                return 1;
+            }
+            
             jwArr_object();
             
             jwObj_int("id", wep.id);
@@ -267,34 +273,35 @@ int main(int argc, char ** argv) {
             jwObj_double("acceleration", wep.acceleration);
             jwObj_double("gravity_acceleration", wep.gravity_acceleration);
             jwObj_double("torso_turn_rate", wep.torso_turn_rate);
-            jwObj_double("range_at_which_damage_type_applies", wep.range_at_which_damage_type_applies);
+            jwObj_double("damage_type_range", wep.damage_type_range);
             jwObj_double("max_range", wep.max_range);
             jwObj_double("min_range", wep.min_range);
             jwObj_int("offensive_power", wep.offensive_power);
             jwObj_int("rapid_fire", wep.rapid_fire);
-            jwObj_int("fire_interval", wep.fire_interval);
-            jwObj_int("shooting_interval", wep.shooting_interval);
-            jwObj_int("number_of_simultaneous_shots", wep.number_of_simultaneous_shots);
-            jwObj_int("time_to_shift_when_firing_at_the_same_time", wep.time_to_shift_when_firing_at_the_same_time);
+            jwObj_int("firing_interval", wep.firing_interval);
+            jwObj_int("reload_interval", wep.reload_interval);
+            jwObj_int("volley_count", wep.volley_count);
+            jwObj_int("volley_interval", wep.volley_interval);
 //            jwObj_int("unknown0", wep.unknown0);
             jwObj_int("impact_effect", wep.impact_effect);
             jwObj_int("number_of_bullets", wep.number_of_bullets);
             jwObj_int("number_of_mags", wep.number_of_mags);
-            jwObj_int("ranged_weapon_range_damage", wep.ranged_weapon_range_damage);
+            jwObj_int("offensive_power_falloff", wep.offensive_power_falloff);
             jwObj_int("weight", wep.weight);
             jwObj_int("fire_probability", wep.fire_probability);
-            jwObj_int("additional_damage_when_on_fire", wep.additional_damage_when_on_fire);
+            jwObj_int("fire_damage", wep.fire_damage);
 //            jwObj_int("unknown1", wep.unknown1);
-            jwObj_int("rear_end", wep.rear_end);
-            jwObj_int("simultaneous_flight", wep.simultaneous_flight);
-            jwObj_double("horizontal_length_of_simultaneous_firing", wep.horizontal_length_of_simultaneous_firing);
-            jwObj_double("vertical_length_of_simultaneous_firing", wep.vertical_length_of_simultaneous_firing);
+            jwObj_int("tracking", wep.tracking);
+            jwObj_int("volley_spread", wep.volley_spread);
+            jwObj_double("horizontal_muzzle_offset", wep.horizontal_muzzle_offset);
+            jwObj_double("vertical_muzzle_offset", wep.vertical_muzzle_offset);
             jwObj_double("retraction", wep.retraction);
             jwObj_int("damage_type", wep.damage_type);
-            jwObj_int("trajectory", wep.trajectory);
-            jwObj_int("firing_effect", wep.firing_effect);
-            jwObj_int("next_to_simultaneous_firing", wep.next_to_simultaneous_firing);
-            jwObj_int("simultaneous_vertical_firing", wep.simultaneous_vertical_firing);
+            jwObj_int("firing_delay", wep.firing_delay);
+            jwObj_int("category", wep.category);
+            jwObj_int("flying_effect", wep.flying_effect);
+            jwObj_int("horizontal_muzzle_count", wep.horizontal_muzzle_count);
+            jwObj_int("vertical_muzzle_count", wep.vertical_muzzle_count);
             
             jwObj_int("bullet_model", bullet_model);
             jwObj_int("weapon_model", weapon_atribs.model);

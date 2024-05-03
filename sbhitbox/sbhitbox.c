@@ -8,17 +8,6 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
-char * progname;
-char out_path[256];
-char * ppd_path;
-char * gltf_path;
-
-
-const float scale_factor = 100.0f;
-
-int vert_count = 0;
-float verts[20000];
-
 #define HEADER_SIZE 16
 
 struct entry {
@@ -26,6 +15,35 @@ struct entry {
     int16_t verts[3][3];
     uint16_t padding;
 } __attribute__((__packed__));
+
+char * progname;
+char out_path[256];
+char * ppd_path;
+char * gltf_path;
+
+const float scale_factor = 100.0f;
+
+uint32_t vert_count = 0;
+float verts[20000];
+
+uint32_t quad_count = 0;
+uint32_t quad_flags0[4000];
+uint32_t quad_flags1[4000];
+
+void write_verts(FILE * outf) {
+    printf("Writing %d quad attributes\n", quad_count);
+    
+    fwrite(&quad_count, sizeof(uint32_t), 1, outf);
+    fwrite(quad_flags0, sizeof(uint32_t), quad_count, outf);
+    fwrite(quad_flags1, sizeof(uint32_t), quad_count, outf);
+    quad_count = 0;
+
+    printf("Writing %d verts\n", vert_count);
+    
+    fwrite(&vert_count, sizeof(uint32_t), 1, outf);
+    fwrite(verts, 3 * sizeof(float), vert_count, outf);
+    vert_count = 0;
+}
 
 int main(int argc, char ** argv) {
     progname = *argv++; argc--;
@@ -79,7 +97,6 @@ int main(int argc, char ** argv) {
     
     fseek(ppd, HEADER_SIZE + offsets[0], SEEK_SET);
     
-    
     strncpy(out_path, ppd_path, sizeof(out_path));
 
     char * ext = strrchr(out_path, '.');
@@ -101,18 +118,14 @@ int main(int argc, char ** argv) {
     
     bool done = false;
     while (true) {
-        long current_offset = ftell(ppd);
+        long current_offset = ftell(ppd) - HEADER_SIZE;
         if (bone_offset && current_offset >= bone_offset) {
             done = true;
             break;
         }
         
-        if (current_part < parts - 1 && current_offset >= offsets[current_part]) {
-            printf("Writing %d verts\n", vert_count);
-            fwrite(&vert_count, sizeof(uint32_t), 1, outf);
-            fwrite(verts, 3 * sizeof(float), vert_count, outf);
-            
-            vert_count = 0;
+        if (current_part < parts - 1 && current_offset >= offsets[current_part + 1]) {
+            write_verts(outf);
             current_part++;
         }
 
@@ -157,13 +170,15 @@ int main(int argc, char ** argv) {
         fread(&zero, sizeof(uint32_t), 1, ppd);
         if (zero) printf("Non-zero 0 value: %08X\n", zero);
         
-        uint32_t magic0;
-        fread(&magic0, sizeof(uint32_t), 1, ppd);
-        printf("Maigc0 %08X | %d\n", magic0, magic0);
+        uint32_t * flags0 = quad_flags0 + quad_count;
+        fread(flags0, sizeof(uint32_t), 1, ppd);
+        printf("Flags 0: %08X\n", *flags0);
         
-        float magic1;
-        fread(&magic1, sizeof(float), 1, ppd);
-        printf("Magic1 %f\n", magic1);
+        uint32_t * flags1 = quad_flags1 + quad_count;
+        fread(flags1, sizeof(uint32_t), 1, ppd);
+        printf("Flags 1: %08X\n", *flags1);
+        
+        quad_count++;
         
         float norm[3];
         fread(norm, sizeof(float), 3, ppd);
@@ -172,40 +187,36 @@ int main(int argc, char ** argv) {
         fread(&zero, sizeof(uint32_t), 1, ppd);
         if (zero) printf("Non-zero 1 value: %08X\n", zero);
         
-        if (fabs(magic1) > 0.001) {
-            // Finish 4th triangle
-            vptr[12] = vptr[3];
-            vptr[13] = vptr[4];
-            vptr[14] = vptr[5];
-            
-            vptr[15] = vptr[6];
-            vptr[16] = vptr[7];
-            vptr[17] = vptr[8];
+        // Finish 4th triangle
+        vptr[12] = vptr[3];
+        vptr[13] = vptr[4];
+        vptr[14] = vptr[5];
         
-            // Reverse the winding order
-            float x = vptr[0];
-            float y = vptr[1];
-            float z = vptr[2];
-            
-            vptr[0] = vptr[3];
-            vptr[1] = vptr[4];
-            vptr[2] = vptr[5];
-            
-            vptr[3] = x;
-            vptr[4] = y;
-            vptr[5] = z;
-            
-            vert_count += 6;
-//            fprintf(outf, "f %d %d %d\n", verts, verts + 1, verts + 2);
-//            fprintf(outf, "f %d %d %d\n\n", verts + 3, verts + 2, verts + 1);
-        }
+        vptr[15] = vptr[6];
+        vptr[16] = vptr[7];
+        vptr[17] = vptr[8];
+    
+        // Reverse the winding order
+        float x = vptr[0];
+        float y = vptr[1];
+        float z = vptr[2];
+        
+        vptr[0] = vptr[3];
+        vptr[1] = vptr[4];
+        vptr[2] = vptr[5];
+        
+        vptr[3] = x;
+        vptr[4] = y;
+        vptr[5] = z;
+        
+        vert_count += 6;
+        //fprintf(outf, "f %d %d %d\n", verts, verts + 1, verts + 2);
+        //fprintf(outf, "f %d %d %d\n\n", verts + 3, verts + 2, verts + 1);
         
         printf("\n");
     }
     
-    printf("Writing final %d verts\n", vert_count);
-    fwrite(&vert_count, sizeof(uint32_t), 1, outf);
-    fwrite(verts, 3 * sizeof(float), vert_count, outf);
+    write_verts(outf);
     
     if (bone_offset) {
         fseek(ppd, HEADER_SIZE + bone_offset, SEEK_SET);

@@ -62,13 +62,13 @@ void convert_string(void) {
 }
 
 void output_string(FILE * outf, bool is_english) {
-    if (is_english) fputc('"', outf);
+    fputc('"', outf);
 
     for (int j = 0; buf8[j]; j++) {
         switch (buf8[j]) {
-        case '\n':
-            fprintf(outf, "\\n");
-            break;
+//        case '\n':
+//            fprintf(outf, "\\n");
+//            break;
         case '\v':
         case '\t':
         case '\a':
@@ -83,7 +83,7 @@ void output_string(FILE * outf, bool is_english) {
         }
     }
     
-    if (is_english) fputc('"', outf);
+    fputc('"', outf);
 }
 
 int main(int argc, char ** argv) {
