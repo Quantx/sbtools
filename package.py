@@ -128,13 +128,23 @@ def main(godot_path, root_path):
         res = subprocess.run([tool_path("binarize"), "-u", bin_path + ".bin"])
         if res.returncode != 0: sys.exit(1)
 
+    # Object textures to patch
+    objTexNames = ["0115"]
+    for i in range(157, 184):
+        objTexNames.append(f"{i:04}")
+
     # Convert Textures
     for tex in os.listdir(BIN_PATHS["TEXTURE"]):
-        _, ext = os.path.splitext(tex)
+        tex_name, ext = os.path.splitext(tex)
         tex_path = os.path.join(BIN_PATHS["TEXTURE"], tex)
         if ext == ".xpr":
             print("Converting texture:", tex_path)
-            res = subprocess.run([tool_path("sbtexture"), tex_path])
+            args = [tool_path("sbtexture"), tex_path]
+            if tex_name in objTexNames:
+                # Patch object textures
+                args = [tool_path("sbtexture"), "-p", tex_path]
+
+            res = subprocess.run(args)
             if res.returncode != 0: sys.exit(1)
 
     # Convert Models
@@ -484,6 +494,7 @@ def main(godot_path, root_path):
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0132.tga"), os.path.join(ui_path, "spritesheet0.tga"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0318.tga"), os.path.join(ui_path, "spritesheet1.tga"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0110.tga"), os.path.join(ui_path, "loading.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0105.tga"), os.path.join(ui_path, "smallfont.tga"))
 
     # Copy Emblems
     emblem_path = os.path.join(out_path, "emblems")

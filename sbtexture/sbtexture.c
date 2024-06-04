@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -31,6 +32,7 @@
 #define FORMAT_RGBA 0x12
 
 char * progname;
+bool objtex_patch;
 
 #define PATH_OUT_MAX 256
 char out_path[PATH_OUT_MAX];
@@ -63,7 +65,7 @@ void dxt1_decode(struct block_dxt1 * dxt, uint8_t rgba[64], int isDXT1) {
         uint8_t code = (dxt->codes >> (i * 2)) & 3;
 
         float c[3];
-        int alpha = 0xFF;
+        uint8_t alpha = 0xFF;
         for (int j = 0; j < 3; j++) {
             switch (code) {
             case 0: c[j] = c0[j]; break;
@@ -183,6 +185,21 @@ void dxt3_encode(struct block_dxt3 * dxt, uint8_t rgba[64]) {
         uint64_t a = (rgba[i + 3] >> 4) & 0xF;
     
         dxt->alpha |= a << i;
+    }
+}
+
+void objtex_blit(uint8_t * img_data, int width, int height, int src_x, int src_y, int dest_x, int dest_y, int dest_w, int dest_h) {
+    int off_x = dest_x - src_x;
+    int off_y = dest_y - src_y;
+    for (int y = dest_y; y < dest_y + dest_h; y++) {
+        for (int x = dest_x; x < dest_x + dest_w; x++) {
+            int dst_idx = (y * width + x) * 4;
+            int src_idx = ((y - off_y) * width + x - off_x) * 4;
+            
+            for (int i = 0; i < 4; i++) {
+                img_data[dst_idx + i] = img_data[src_idx + i];
+            }
+        }
     }
 }
 
@@ -352,6 +369,11 @@ int makeTGA(char * path) {
     }
     
     free(dxt_data);
+    
+    if (objtex_patch) {
+        objtex_blit(out_data, width, height, 1075, 1820, 1685, 1732, 15, 101);
+        objtex_blit(out_data, width, height, 1075, 1820, 1685, 1220, 15, 101);
+    }
     
     char * ext = strrchr(path, '.') + 1;
     *ext++ = 't';
@@ -552,6 +574,18 @@ int main(int argc, char ** argv) {
     if (!argc) {
         fprintf(stderr, "Please specify either a .tgx or .xpr file: %s <path/example.xpr>\n", progname);
         return 1;
+    }
+    
+    if (argc == 2) {
+        char * opt = *argv++; argc--;
+        if (*opt++ != '-') {
+            fprintf(stderr, "Invalid argument flag: %s\n", opt);
+            return 1;
+        }
+        
+        if (*opt == 'p') {
+            objtex_patch = true;
+        }
     }
     
     char * path = *argv++; argc--;

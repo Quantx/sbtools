@@ -27,7 +27,7 @@
 char path[256];
 
 const unsigned int verts_stride = 8 * sizeof(float) + 8 * sizeof(uint8_t);
-const float scale_factor = 100.0f;
+const float scale_factor = 0.01f;
 
 bool flip_faces = false;
 
@@ -106,8 +106,8 @@ int main(int argc, char ** argv) {
     struct buffer nodespecial_section;
     fread(&nodespecial_section, sizeof(struct buffer), 1, sbmdl);
     
-    struct buffer nodeid_section;
-    fread(&nodeid_section, sizeof(struct buffer), 1, sbmdl);
+    struct buffer nodemirror_section;
+    fread(&nodemirror_section, sizeof(struct buffer), 1, sbmdl);
     
     struct buffer index_section;
     fread(&index_section, sizeof(struct buffer), 1, sbmdl);
@@ -137,7 +137,7 @@ int main(int argc, char ** argv) {
     }
     fread(&magic, sizeof(uint32_t), 1, sbmdl);
     if (magic != 0x18) {
-        fprintf(stderr, "Magic 0x58 was %X instead of 0x18, this is probably not an SB model\n", magic);
+        fprintf(stderr, "Magic 0x5C was %X instead of 0x18, this is probably not an SB model\n", magic);
         fclose(sbmdl);
         return 1;
     }
@@ -158,6 +158,10 @@ int main(int argc, char ** argv) {
     fread(global_pos, sizeof(float), 3, sbmdl);
     float global_dir[3];
     fread(global_dir, sizeof(float), 3, sbmdl);
+    
+    global_pos[0] *= scale_factor;
+    global_pos[1] *= scale_factor;
+    global_pos[2] *= scale_factor;
     
     printf("Global POS(%f, %f, %f), DIR(%f, %f, %f)\n",
         global_pos[0], global_pos[1], global_pos[2],
@@ -191,9 +195,9 @@ int main(int argc, char ** argv) {
         
         printf("Mesh %d POS(%f, %f, %f), DIR(%f, %f, %f)\n", mi, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2]);
         
-        pos[0] /= scale_factor;
-        pos[1] /= scale_factor;
-        pos[2] /= scale_factor;
+        pos[0] *= scale_factor;
+        pos[1] *= scale_factor;
+        pos[2] *= scale_factor;
         
         verts_out[mi].pos[0] = pos[0];
         verts_out[mi].pos[1] = pos[1];
@@ -261,9 +265,9 @@ int main(int argc, char ** argv) {
             fread(vpi, sizeof(int16_t), 3, sbmdl);
             float vp[3] = { vpi[0], vpi[1], vpi[2] };
             
-            vp[0] /= scale_factor;
-            vp[1] /= scale_factor;
-            vp[2] /= scale_factor;
+            vp[0] *= scale_factor;
+            vp[1] *= scale_factor;
+            vp[2] *= scale_factor;
 
             fwrite(vp, sizeof(float), 3, outf);
 
@@ -351,11 +355,11 @@ int main(int argc, char ** argv) {
     
     
     uint8_t * mirror_ids = NULL;
-    if (nodeid_section.size) {
-        fseek(sbmdl, nodeid_section.offset, SEEK_SET);
+    if (nodemirror_section.size) {
+        fseek(sbmdl, nodemirror_section.offset, SEEK_SET);
         
-        if (nodeid_section.size != node_count) {
-            fprintf(stderr, "Node ID section size %d != node_count %d\n", nodeid_section.size, node_count);
+        if (nodemirror_section.size != node_count) {
+            fprintf(stderr, "Node ID section size %d != node_count %d\n", nodemirror_section.size, node_count);
             return 1;
         }
     
