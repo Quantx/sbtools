@@ -139,10 +139,10 @@ def main(godot_path, root_path):
         tex_path = os.path.join(BIN_PATHS["TEXTURE"], tex)
         if ext == ".xpr":
             print("Converting texture:", tex_path)
-            args = [tool_path("sbtexture"), tex_path]
-            if tex_name in objTexNames:
+            args = [tool_path("sbtexture"), "-d", tex_path]
+#            if tex_name in objTexNames:
                 # Patch object textures
-                args = [tool_path("sbtexture"), "-p", tex_path]
+#                args = [tool_path("sbtexture"), "-p", tex_path]
 
             res = subprocess.run(args)
             if res.returncode != 0: sys.exit(1)
@@ -300,29 +300,29 @@ def main(godot_path, root_path):
             pass
 
         objtex = i + 157
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{objtex:04}.tga"), os.path.join(mission_path, "object.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{objtex:04}.dds"), os.path.join(mission_path, "object.dds"))
         
         gndtex = i + 184
         try:
-            os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{gndtex:04}.tga"), os.path.join(mission_path, "ground.tga"))
+            os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{gndtex:04}.dds"), os.path.join(mission_path, "ground.dds"))
         except FileNotFoundError:
             pass
         
         maptex = i + 211
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{maptex:04}.tga"), os.path.join(mission_path, "map.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{maptex:04}.dds"), os.path.join(mission_path, "map.dds"))
         
         mapsmalltex = i + 238
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{mapsmalltex:04}.tga"), os.path.join(mission_path, "map_small.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{mapsmalltex:04}.dds"), os.path.join(mission_path, "map_small.dds"))
         
         skytex0 = (i * 2) + 265
         try:
-            os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{skytex0:04}.tga"), os.path.join(mission_path, "sky0.tga"))
+            os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{skytex0:04}.dds"), os.path.join(mission_path, "sky0.dds"))
         except FileNotFoundError:
             pass
         
         skytex1 = (i * 2) + 266
         try:
-            os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{skytex1:04}.tga"), os.path.join(mission_path, "sky1.tga"))
+            os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{skytex1:04}.dds"), os.path.join(mission_path, "sky1.dds"))
         except FileNotFoundError:
             pass
             
@@ -361,19 +361,19 @@ def main(godot_path, root_path):
             texid = 3
 
         uitex = texid + 126
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{uitex:04}.tga"), os.path.join(cockpit_path, "ui.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{uitex:04}.dds"), os.path.join(cockpit_path, "ui.dds"))
         
         tex0 = (texid * 2) + 133
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{tex0:04}.tga"), os.path.join(cockpit_path, "texture0.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{tex0:04}.dds"), os.path.join(cockpit_path, "texture0.dds"))
         
         tex1 = (texid * 2) + 134
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{tex1:04}.tga"), os.path.join(cockpit_path, "texture1.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{tex1:04}.dds"), os.path.join(cockpit_path, "texture1.dds"))
         
         disp0 = (texid * 2) + 145
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{disp0:04}.tga"), os.path.join(cockpit_path, "display0.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{disp0:04}.dds"), os.path.join(cockpit_path, "display0.dds"))
         
         disp1 = (texid * 2) + 146
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{disp1:04}.tga"), os.path.join(cockpit_path, "display1.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{disp1:04}.dds"), os.path.join(cockpit_path, "display1.dds"))
     
         objstart = cockpit_objs[i]
         objend = cockpit_objs[i + 1]
@@ -441,7 +441,7 @@ def main(godot_path, root_path):
     if not os.path.isdir(portrait_path):
             os.makedirs(portrait_path)
     for i in range(0, 105, 1):
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{i:04}.tga"), os.path.join(portrait_path, f"{i:03}.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{i:04}.dds"), os.path.join(portrait_path, f"{i:03}.dds"))
         
     # Copy menu models
     menu_path = os.path.join(out_path, "menu")
@@ -452,35 +452,35 @@ def main(godot_path, root_path):
         os.replace(os.path.join(BIN_PATHS["VTMODEL"], f"{i:04}.glbin"), os.path.join(menu_path, f"{i:04}.glbin"))
     
     # Copy menu textures
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0106.tga"), os.path.join(menu_path, "online.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0113.tga"), os.path.join(menu_path, "controller.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0115.tga"), os.path.join(menu_path, "texture.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0106.dds"), os.path.join(menu_path, "online.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0113.dds"), os.path.join(menu_path, "controller.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0115.dds"), os.path.join(menu_path, "texture.dds"))
     
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0319.tga"), os.path.join(menu_path, "company0.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0320.tga"), os.path.join(menu_path, "company1.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0321.tga"), os.path.join(menu_path, "company2.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0319.dds"), os.path.join(menu_path, "company0.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0320.dds"), os.path.join(menu_path, "company1.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0321.dds"), os.path.join(menu_path, "company2.dds"))
 
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0323.tga"), os.path.join(menu_path, "victory.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0324.tga"), os.path.join(menu_path, "defeat.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0325.tga"), os.path.join(menu_path, "escape.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0326.tga"), os.path.join(menu_path, "death.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0327.tga"), os.path.join(menu_path, "promotion.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0323.dds"), os.path.join(menu_path, "victory.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0324.dds"), os.path.join(menu_path, "defeat.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0325.dds"), os.path.join(menu_path, "escape.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0326.dds"), os.path.join(menu_path, "death.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0327.dds"), os.path.join(menu_path, "promotion.dds"))
 
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0338.tga"), os.path.join(menu_path, "screenshot0.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0339.tga"), os.path.join(menu_path, "screenshot1.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0338.dds"), os.path.join(menu_path, "screenshot0.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0339.dds"), os.path.join(menu_path, "screenshot1.dds"))
     
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0340.tga"), os.path.join(menu_path, "splashscreen0.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0341.tga"), os.path.join(menu_path, "splashscreen1.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0340.dds"), os.path.join(menu_path, "splashscreen0.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0341.dds"), os.path.join(menu_path, "splashscreen1.dds"))
     
     # Copy effect textures
     effect_path = os.path.join(out_path, "effects")
     if not os.path.isdir(effect_path):
         os.makedirs(effect_path)
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0322.tga"), os.path.join(effect_path, "eject.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0107.tga"), os.path.join(effect_path, "spritesheet0.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0108.tga"), os.path.join(effect_path, "spritesheet1.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0111.tga"), os.path.join(effect_path, "flash.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0109.tga"), os.path.join(effect_path, "scanlines.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0322.dds"), os.path.join(effect_path, "eject.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0107.dds"), os.path.join(effect_path, "spritesheet0.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0108.dds"), os.path.join(effect_path, "spritesheet1.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0111.dds"), os.path.join(effect_path, "flash.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0109.dds"), os.path.join(effect_path, "scanlines.dds"))
 
     for i in range(1186, 1236, 2):
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.gltf"),  os.path.join(effect_path, f"{i:04}.gltf"))
@@ -490,11 +490,11 @@ def main(godot_path, root_path):
     ui_path = os.path.join(out_path, "ui")
     if not os.path.isdir(ui_path):
         os.makedirs(ui_path)
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0114.tga"), os.path.join(ui_path, "controller.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0132.tga"), os.path.join(ui_path, "spritesheet0.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0318.tga"), os.path.join(ui_path, "spritesheet1.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0110.tga"), os.path.join(ui_path, "loading.tga"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0105.tga"), os.path.join(ui_path, "smallfont.tga"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0114.dds"), os.path.join(ui_path, "controller.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0132.dds"), os.path.join(ui_path, "spritesheet0.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0318.dds"), os.path.join(ui_path, "spritesheet1.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0110.dds"), os.path.join(ui_path, "loading.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0105.dds"), os.path.join(ui_path, "smallfont.dds"))
 
     # Copy Emblems
     emblem_path = os.path.join(out_path, "emblems")
@@ -502,7 +502,7 @@ def main(godot_path, root_path):
         os.makedirs(emblem_path)
     for i in range(0, 10, 1):
         emblem = i + 328
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{emblem:04}.tga"), os.path.join(emblem_path, f"{i}.tga"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{emblem:04}.dds"), os.path.join(emblem_path, f"{i}.dds"))
 
     # Build Godot package
     res = subprocess.run([godot_path, "--headless", "--path", "build", "--export-pack", "Proprietary", os.path.join("..", "Proprietary.pck")])
