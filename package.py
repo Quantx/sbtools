@@ -479,8 +479,18 @@ def main(godot_path, root_path):
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0322.dds"), os.path.join(effect_path, "eject.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0107.dds"), os.path.join(effect_path, "spritesheet0.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0108.dds"), os.path.join(effect_path, "spritesheet1.dds"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0111.dds"), os.path.join(effect_path, "flash.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0109.dds"), os.path.join(effect_path, "scanlines.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0111.dds"), os.path.join(effect_path, "flash.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0112.dds"), os.path.join(effect_path, "palette.dds"))
+    
+    # Copy water textures
+    water_path = os.path.join(out_path, "water")
+    if not os.path.isdir(water_path):
+        os.makedirs(water_path)
+    for i in range(0, 10):
+        waterid = 116 + i
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{waterid:04}.dds"), os.path.join(water_path, f"water{i}.dds"))
+
 
     for i in range(1186, 1236, 2):
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.gltf"),  os.path.join(effect_path, f"{i:04}.gltf"))
