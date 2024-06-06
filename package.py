@@ -293,9 +293,9 @@ def main(godot_path, root_path):
             os.replace(os.path.join(TERRAIN_PATH, mapid + "_texture.tga"), os.path.join(mission_path, "terrain.tga"))
         except FileNotFoundError:
             pass
-            
+        
         try:
-            os.replace(os.path.join(TERRAIN_PATH, mapid + "_height.data"), os.path.join(mission_path, "height.data"))
+            os.replace(os.path.join(TERRAIN_PATH, mapid + "_height.dds"), os.path.join(mission_path, "height.dds"))
         except FileNotFoundError:
             pass
 

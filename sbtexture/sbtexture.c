@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "../dds.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -39,43 +41,7 @@ bool dds_output;
 #define PATH_OUT_MAX 256
 char out_path[PATH_OUT_MAX];
 
-struct block_dxt1 {
-    uint16_t color0;
-    uint16_t color1;
-    uint32_t codes;
-};
-
-struct block_dxt3 {
-    uint64_t alpha;
-    struct block_dxt1 dxt1;
-};
-
-struct dds_pixelformat {
-    uint32_t size;
-    uint32_t flags;
-    char code[4];
-    uint32_t rgbBitCount;
-    uint32_t rBitMask;
-    uint32_t gBitMask;
-    uint32_t bBitMask;
-    uint32_t aBitMask;
-};
-
-struct dds_header {
-    uint32_t size;
-    uint32_t flags;
-    uint32_t height;
-    uint32_t width;
-    uint32_t pitch;
-    uint32_t depth; // Depth of a 3D texture
-    uint32_t levels; // Mipmap Count
-    uint32_t reserved0[11];
-    struct dds_pixelformat format;
-    uint32_t caps[4];
-    uint32_t reserved1;
-};
-
-void dxt1_decode(struct block_dxt1 * dxt, uint8_t rgba[64], int isDXT1) {
+void dxt1_decode(struct dxt1_block * dxt, uint8_t rgba[64], int isDXT1) {
     float c0[3] = {
         ((dxt->color0 & 0xF800) >> 11) / 32.0f,
         ((dxt->color0 & 0x07E0) >>  5) / 64.0f,
@@ -123,7 +89,7 @@ void dxt1_decode(struct block_dxt1 * dxt, uint8_t rgba[64], int isDXT1) {
     }
 }
 
-void dxt3_decode(struct block_dxt3 * dxt, uint8_t rgba[64]) {
+void dxt3_decode(struct dxt3_block * dxt, uint8_t rgba[64]) {
     dxt1_decode(&dxt->dxt1, rgba, 0);
     
     for (int i = 60; i >= 0; i -= 4) {
@@ -133,7 +99,7 @@ void dxt3_decode(struct block_dxt3 * dxt, uint8_t rgba[64]) {
 }
 
 // The DXT library can't handle DXT1 with alpha, so we need to help it out 
-void dxt1_encode(struct block_dxt1 * dxt, uint8_t rgba[64]) {
+void dxt1_encode(struct dxt1_block * dxt, uint8_t rgba[64]) {
     // Find the average color of all visible pixels
     uint16_t r = 0, g = 0, b = 0, opaque = 0;
     for (int i = 0; i < 64; i += 4) {
@@ -198,7 +164,7 @@ void dxt1_encode(struct block_dxt1 * dxt, uint8_t rgba[64]) {
     }
 }
 
-void dxt3_encode(struct block_dxt3 * dxt, uint8_t rgba[64]) {
+void dxt3_encode(struct dxt3_block * dxt, uint8_t rgba[64]) {
     uint8_t data[64];
     memcpy(data, rgba, 64);
     // Do a small optimization for the library
@@ -362,11 +328,11 @@ int makeTGA(char * path) {
         uint8_t rgba[64];
         
         if (color == FORMAT_DXT1) {
-            dxt1_decode((struct block_dxt1 *)(dxt_data + dxt_pos), rgba, 1);
-            dxt_pos += sizeof(struct block_dxt1);
+            dxt1_decode((struct dxt1_block *)(dxt_data + dxt_pos), rgba, 1);
+            dxt_pos += sizeof(struct dxt1_block);
         } else if (color == FORMAT_DXT3) {
-            dxt3_decode((struct block_dxt3 *)(dxt_data + dxt_pos), rgba);
-            dxt_pos += sizeof(struct block_dxt3);
+            dxt3_decode((struct dxt3_block *)(dxt_data + dxt_pos), rgba);
+            dxt_pos += sizeof(struct dxt3_block);
         } else if (color == FORMAT_ARGB) {
             out_data[dxt_pos] = ((uint8_t *)dxt_data)[dxt_pos];
             dxt_pos++;
@@ -501,17 +467,17 @@ int makeXPR(char * path) {
             }
             
             if (color == FORMAT_DXT1) {
-                struct block_dxt1 dxt1 = {0};
+                struct dxt1_block dxt1 = {0};
                 dxt1_encode(&dxt1, rgba);
-                fwrite(&dxt1, sizeof(struct block_dxt1), 1, sbtex);
+                fwrite(&dxt1, sizeof(struct dxt1_block), 1, sbtex);
                 
-                data_pos += sizeof(struct block_dxt1);
+                data_pos += sizeof(struct dxt1_block);
             } else if (color == FORMAT_DXT3) {
-                struct block_dxt3 dxt3 = {0};
+                struct dxt3_block dxt3 = {0};
                 dxt3_encode(&dxt3, rgba);
-                fwrite(&dxt3, sizeof(struct block_dxt3), 1, sbtex);
+                fwrite(&dxt3, sizeof(struct dxt3_block), 1, sbtex);
                 
-                data_pos += sizeof(struct block_dxt3);
+                data_pos += sizeof(struct dxt3_block);
             }
         }
         
@@ -592,17 +558,6 @@ int makeXPR(char * path) {
 }
 
 int makeDDS(char * path) {
-    // Sanity checks
-    if (sizeof(struct dds_pixelformat) != 32) {
-        fprintf(stderr, "Invalid dds pixel format size of %ld, should be 32\n", sizeof(struct dds_pixelformat));
-        return 1;
-    }
-    
-    if (sizeof(struct dds_header) != 124) {
-        fprintf(stderr, "Invalid dds header size of %ld, should be 124\n", sizeof(struct dds_header));
-        return 1;
-    }
-    
     // Open XPR file
     FILE * xpr = fopen(path, "rb");
     if (!xpr) {
@@ -698,12 +653,7 @@ int makeDDS(char * path) {
     
     printf("Converting texture %s to DDS\n", path);
     
-    struct dds_header header = {
-        .size = 124,
-        .flags = 0x1 | 0x2 | 0x4 | 0x1000, // Required flags
-        .format.size = 32,
-        .format.flags = 0,
-    };
+    struct dds_header header = DDS_HEADER_INIT;
     
     header.levels = FORMAT_LEVELS(xpr_data);
     
@@ -749,7 +699,7 @@ int makeDDS(char * path) {
         header.pitch = block_w * block_h * 16;
         
         // DXT1 will be converted to DXT3
-        memcpy(header.format.code, "DXT3", 4);
+        memcpy(header.format.codeStr, "DXT3", 4);
     } else {
         fprintf(stderr, "Unknown XPR image format: %02X\n", xpr_color);
         fclose(xpr);
@@ -825,9 +775,9 @@ int makeDDS(char * path) {
     
     if (xpr_color == FORMAT_DXT1) {
         // Convert to DXT3
-        struct block_dxt3 block;
-        for (uint32_t pos = 0; pos < data_size; pos += sizeof(struct block_dxt1)) {
-            if (fread(&block.dxt1, sizeof(struct block_dxt1), 1, xpr) != 1) {
+        struct dxt3_block block;
+        for (uint32_t pos = 0; pos < data_size; pos += sizeof(struct dxt1_block)) {
+            if (fread(&block.dxt1, sizeof(struct dxt1_block), 1, xpr) != 1) {
                 fclose(xpr);
                 fclose(dds);
                 fprintf(stderr, "Unexpected EOF while reading XPR data\n");
@@ -846,7 +796,7 @@ int makeDDS(char * path) {
                 }
             }
             
-            fwrite(&block, sizeof(struct block_dxt3), 1, dds);
+            fwrite(&block, sizeof(struct dxt3_block), 1, dds);
         }
     } else {
         // Copy data

@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "../dds.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -220,8 +222,6 @@ int unpack(char * path) {
         return 1;
     }
     
-    printf("Reading collision data from %s\n", out_path);
-    
     uint16_t width, height;
     fread(&width, sizeof(uint16_t), 1, gadf);
     fread(&height, sizeof(uint16_t), 1, gadf);
@@ -241,10 +241,10 @@ int unpack(char * path) {
         // Magic
         uint8_t mv;
         switch (magic) {
-        case 0xC8000000: mv = 0; break;
-        case 0xC9000000: mv = 1; break;
-        case 0xCC000000: mv = 2; break;
-        case 0xC8400000: mv = 3; break;
+        case 0xC8000000: mv = 0; break; // -131072.0f
+        case 0xC9000000: mv = 1; break; // 2.81661e-43f
+        case 0xCC000000: mv = 2; break; // 2.85865e-43f
+        case 0xC8400000: mv = 3; break; // 2.32391e-41
         default:
             mv = 4;
             printf("Unknown magic %08X at %d\n", magic, i);
@@ -298,7 +298,7 @@ int unpack(char * path) {
     
     printf("Reading terrain heightmap data from %s\n", out_path);
     
-    pr = snprintf(out_path, PATH_OUT_MAX, "%s_height.data", path);
+    pr = snprintf(out_path, PATH_OUT_MAX, "%s_height.dds", path);
     if (pr < 0 || pr >= PATH_OUT_MAX) {
         fprintf(stderr, "Ran out of room when trying to allocate %s_height.obj path\n", path);
         return 1;
@@ -310,37 +310,44 @@ int unpack(char * path) {
         return 1;
     }
     
-    float minh, maxh;
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            float elv;
-            fread(&elv, sizeof(float), 1, gndf);
+    struct dds_header header = DDS_HEADER_INIT;
+    
+    header.width = width;
+    header.height = height;
 
-            if (!x && !y) { minh = elv; maxh = elv; }
-            else {
-                minh = fmin(minh, elv);
-                maxh = fmax(maxh, elv);
-            }
-            
-            fwrite(&elv, sizeof(float), 1, hmdf);
-/*
-            elv /= 100.0f;
+    header.flags |= 0x80000; // Linear size is provided
+    header.pitch = size * sizeof(float);
 
-            if (elv > INT16_MAX) fprintf(stderr, "Warning height of %f is greater than INT16 maximum\n", elv);
-            if (elv < INT16_MIN) fprintf(stderr, "Warning height of %f is smaller than INT16 minimum\n", elv);
-
-            int16_t sei = elv;
-
-            fwrite(&sei, sizeof(int16_t), 1, hmdf);
-*/
-        }
+    // Enable DX10 header
+    memcpy(header.format.codeStr, "DX10", 4);
+    header.format.flags = 0x4;
+    
+    struct dds_header_dx10 header10 = {
+        .format = 16, // R32G32F
+        .dimensions = DDS_DX10_DIMENSION_2D,
+        .arraySize = 1,
+    };
+    
+    fputs("DDS ", hmdf);
+    fwrite(&header, sizeof(struct dds_header), 1, hmdf);
+    fwrite(&header10, sizeof(struct dds_header_dx10), 1, hmdf);
+    
+    float * rChannel = malloc(size * sizeof(float));
+    float * gChannel = malloc(size * sizeof(float));
+    
+    fread(rChannel, sizeof(float), size, gndf); // This channel stores the heightmap data
+    fread(gChannel, sizeof(float), size, gndf);
+    
+    // Stripe the R and G channels
+    for (uint32_t px = 0; px < size; px++) {
+        fwrite(rChannel + px, sizeof(float), 1, hmdf);
+        fwrite(gChannel + px, sizeof(float), 1, hmdf);
     }
     
-    fclose(hmdf);
+    free(rChannel);
+    free(gChannel);
     
-//    printf("Min %f, Max %f\n", minh, maxh);
-
-    fseek(gndf, size * sizeof(float), SEEK_CUR);
+    fclose(hmdf);
     
     uint8_t * texture = malloc(size * 4);
     fread(texture, sizeof(uint8_t), size * 4, gndf);
@@ -352,7 +359,6 @@ int unpack(char * path) {
         uint8_t temp = texture[i];
         texture[i] = texture[i + 2];
         texture[i + 2] = temp;
-//        texture[i+3] = 0xFF;
     }
     
     pr = snprintf(out_path, PATH_OUT_MAX, "%s_texture.tga", path);
@@ -365,6 +371,8 @@ int unpack(char * path) {
         fprintf(stderr, "Failed to open %s\n", out_path);
         return 1;
     }
+    
+    free(texture);
     
     return 0;
 }
@@ -402,7 +410,7 @@ int main(int argc, char ** argv) {
 
     if (progmode == 'p') return pack(*argv);
     else if (progmode == 'u') return unpack(*argv);
-   
+    
     fprintf(stderr, "Unknown progmode: %c\n", progmode);
     return 1;
 }
