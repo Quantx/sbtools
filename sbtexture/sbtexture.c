@@ -791,7 +791,7 @@ int makeDDS(char * path) {
                 for (int c = 0, a = 0; c < 32; c += 2, a += 4) {
                     // Set opaque pixels as needed
                     if (((block.dxt1.codes >> c) & 3u) != 3u) {
-                        block.alpha |= 0xFUL << a;
+                        block.alpha |= 0xFULL << a;
                     }
                 }
             }
