@@ -26,7 +26,7 @@
 
 char path[256];
 
-const unsigned int verts_stride = 8 * sizeof(float) + 8 * sizeof(uint8_t);
+const unsigned int verts_stride = 8 * sizeof(float) + 12 * sizeof(uint8_t);
 const float scale_factor = 0.01f;
 
 bool flip_faces = false;
@@ -180,8 +180,6 @@ int main(int argc, char ** argv) {
     
     struct primative * verts_out = malloc(mesh_count * sizeof(struct primative));
     
-    bool print_format = false;
-    
     // Mesh data
     for (uint8_t mi = 0; mi < mesh_count; mi++) {
         //fseek(sbmdl, MODEL_HEADER_OFFSET + verts_in[mi].offset, SEEK_SET);
@@ -194,18 +192,6 @@ int main(int argc, char ** argv) {
         fread(dir, sizeof(float), 3, sbmdl);
         
         printf("Mesh %d POS(%f, %f, %f), DIR(%f, %f, %f)\n", mi, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2]);
-        
-        pos[0] *= scale_factor;
-        pos[1] *= scale_factor;
-        pos[2] *= scale_factor;
-        
-        verts_out[mi].pos[0] = pos[0];
-        verts_out[mi].pos[1] = pos[1];
-        verts_out[mi].pos[2] = pos[2];
-        
-        verts_out[mi].dir[0] = dir[0];
-        verts_out[mi].dir[1] = dir[1];
-        verts_out[mi].dir[2] = dir[2];
         
         // Validate mesh format
         int32_t format;
@@ -233,19 +219,36 @@ int main(int argc, char ** argv) {
         // Read vertex length
         uint32_t vert_size;
         fread(&vert_size, sizeof(uint32_t), 1, sbmdl);
+        
+        vert_size &= 0xFFu; // Fix a bug with vertex sizes
 
+        bool is_floats = false;
         if (format == FORMAT_XBO) {
-            if (!print_format) printf("Format is XBO\n");
-            if (vert_size != 20) printf("Format XBO does not have vert_size of 20, vert_size == %d\n", vert_size);
+            printf("Format is XBO at %08lX\n", ftell(sbmdl) - 24);
+            if (vert_size == 26) is_floats = true;
+            else if (vert_size != 20) printf("Format XBO does not have vert_size of 20, vert_size == %d\n", vert_size);
         } else if (format == FORMAT_XBO2) {
-            if (!print_format) printf("Format is XBO2\n");
-            if (vert_size != 16) printf("Format XBO2 does not have vert_size of 16, vert_size == %d\n", vert_size);
+            printf("Format is XBO2 at %08lX\n", ftell(sbmdl) - 24);
+            if (vert_size == 22) is_floats = true;
+            else if (vert_size != 16) printf("Format XBO2 does not have vert_size of 16, vert_size == %d\n", vert_size);
         } else if (format == FORMAT_SHA) {
-            if (!print_format) printf("Format is SHA\n");
+            printf("Format is SHA at %08lX\n", ftell(sbmdl) - 24);
             if (vert_size != 12) printf("Format SHA does not have vert_size of 12, vert_size == %d\n", vert_size);
         }
         
-        print_format = true;
+        if (!is_floats) {
+            pos[0] *= scale_factor;
+            pos[1] *= scale_factor;
+            pos[2] *= scale_factor;
+        }
+        
+        verts_out[mi].pos[0] = pos[0];
+        verts_out[mi].pos[1] = pos[1];
+        verts_out[mi].pos[2] = pos[2];
+        
+        verts_out[mi].dir[0] = dir[0];
+        verts_out[mi].dir[1] = dir[1];
+        verts_out[mi].dir[2] = dir[2];
         
         int32_t verts = mesh_size;
         
@@ -261,13 +264,17 @@ int main(int argc, char ** argv) {
 
         // Vertex data
         for (int vi = 0; vi < verts; vi++) {
-            int16_t vpi[3];
-            fread(vpi, sizeof(int16_t), 3, sbmdl);
-            float vp[3] = { vpi[0], vpi[1], vpi[2] };
-            
-            vp[0] *= scale_factor;
-            vp[1] *= scale_factor;
-            vp[2] *= scale_factor;
+            float vp[3];
+            if (is_floats) {
+                fread(vp, sizeof(float), 3, sbmdl);
+            } else {
+                int16_t vpi[3];
+                fread(vpi, sizeof(int16_t), 3, sbmdl);
+                for (int pi = 0; pi < 3; pi++) {
+                    vp[pi] = vpi[pi];
+                    vp[pi] *= scale_factor;
+                }
+            }
 
             fwrite(vp, sizeof(float), 3, outf);
 
@@ -302,22 +309,29 @@ int main(int argc, char ** argv) {
             
             fwrite(vn, sizeof(float), 3, outf);
 
-            // Skip these two 16 bit values (no idea what they do
-            if (format == FORMAT_XBO) {
-                fseek(sbmdl, 2 * sizeof(int16_t), SEEK_CUR);
+            // Vertex color
+            uint8_t color[4] = {0xFF, 0xFF, 0xFF, 0xFF}; // Default to white
+            if (format == FORMAT_XBO || format == FORMAT_XBO2) {
+                uint8_t argb[4]; // ARGB
+                fread(argb, sizeof(uint8_t), 4, sbmdl);
+                color[0] = argb[1]; // R
+                color[1] = argb[2]; // G
+                color[2] = argb[3]; // B
+                color[4] = argb[0]; // A
             }
 
-            if (format == FORMAT_XBO || format == FORMAT_XBO2) {
+            float vt[2] = {0.0f, 0.0f};
+            if (format == FORMAT_XBO) {
                 // Read vertex texture coords
                 int16_t vti[2];
                 fread(vti, sizeof(int16_t), 2, sbmdl);
-                float vt[2] = { vti[0], vti[1] };
+                vt[0] = vti[0];
+                vt[1] = vti[1];
 
                 vt[0] /= 32768.0f;
                 vt[1] /= 32768.0f;
-                
-                fwrite(vt, sizeof(float), 2, outf);
             }
+            fwrite(vt, sizeof(float), 2, outf);
             
             uint8_t joints[4] = {mi + 1};
             fwrite(joints, sizeof(uint8_t), 4, outf);
@@ -325,6 +339,7 @@ int main(int argc, char ** argv) {
             uint8_t weights[4] = {0xFF};
             fwrite(weights, sizeof(uint8_t), 4, outf);
 
+            fwrite(color, sizeof(uint8_t), 4, outf);
         }
     }
     
@@ -461,7 +476,9 @@ int main(int argc, char ** argv) {
     cgltf_mesh * mesh = data.meshes = calloc(data.meshes_count, sizeof(cgltf_mesh));
     mesh->name = strdup(model_name);
 
-    data.accessors_count = mesh_count * 6;
+    const int accessor_count = 7;
+    
+    data.accessors_count = mesh_count * accessor_count;
     data.accessors = calloc(data.accessors_count, sizeof(cgltf_accessor));
     
     data.buffers_count = 1;
@@ -608,7 +625,6 @@ int main(int argc, char ** argv) {
         // There's a bug in this cgltf where we need to subtract 1
         prim->type = prim_type - 1;
         
-        const int accessor_count = 6;
         const int accessor_pos = mi * accessor_count;
 
         prim->attributes_count = accessor_count - 1;
@@ -672,8 +688,15 @@ int main(int argc, char ** argv) {
         weight_acc->type = cgltf_type_vec4;
         weight_acc->offset += (8 * sizeof(float)) + (4 * sizeof(uint8_t));
 
+        cgltf_accessor * color_acc = data.accessors + accessor_pos + 5;
+        snprintf(name, sizeof(name), "Color %d", mi);
+        color_acc->name = strdup(name);
+        color_acc->normalized = true;
+        color_acc->component_type = cgltf_component_type_r_8u;
+        color_acc->type = cgltf_type_vec4;
+        color_acc->offset += (8 * sizeof(float)) + ((4 * sizeof(uint8_t)) * 2);
         
-        cgltf_accessor * ind_acc = data.accessors + accessor_pos + 5;
+        cgltf_accessor * ind_acc = data.accessors + accessor_pos + 6;
         snprintf(name, sizeof(name), "Indicies %d", mi);
         ind_acc->name = strdup(name);
         ind_acc->component_type = cgltf_component_type_r_16u;
@@ -711,6 +734,11 @@ int main(int argc, char ** argv) {
         weights_atr->name = strdup("WEIGHTS_0");
         weights_atr->type = cgltf_attribute_type_weights;
         weights_atr->index = accessor_pos + 4;
+        
+        cgltf_attribute * color_atr = prim->attributes + 5;
+        color_atr->name = strdup("COLOR_0");
+        color_atr->type = cgltf_attribute_type_color;
+        color_atr->index = accessor_pos + 5;
         
         for (int ai = 0; ai < prim->attributes_count; ai++) {
             prim->attributes[ai].data = data.accessors + prim->attributes[ai].index;
