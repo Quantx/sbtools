@@ -20,5 +20,7 @@ sbweapon/sbweapon
 sbweapon/sbweapon.exe
 segment/segment
 segment/segment.exe
+sbsound/sbsound
+sbsound/sbsound.exe
 sbtools/*
 sbtools.zip

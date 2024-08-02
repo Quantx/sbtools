@@ -520,7 +520,7 @@ int main(int argc, char ** argv) {
             }
         }
 
-        char name[16];
+        char name[64];
         if (special_id >= 0) {
             if (mirror_id < ni) {
                 snprintf(name, sizeof(name), "special_%d:%d_a", special_id, mirror_id);

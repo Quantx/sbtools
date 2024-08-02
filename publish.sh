@@ -33,6 +33,9 @@ make win -C sbweapon
 make -C sbhitbox
 make win -C sbhitbox
 
+make -C sbsound
+make win -C sbsound
+
 # Create output directories
 mkdir -p sbtools
 mkdir -p sbtools/linux
@@ -71,6 +74,9 @@ cp sbweapon/sbweapon sbtools/linux/sbweapon
 
 cp sbhitbox/sbhitbox.exe sbtools/windows/sbhitbox.exe
 cp sbhitbox/sbhitbox sbtools/linux/sbhitbox
+
+cp sbsound/sbsound.exe sbtools/windows/sbsound.exe
+cp sbsound/sbsound sbtools/linux/sbsound
 
 cp package.py sbtools/package.py
 cp export_presets.cfg sbtools/export_presets.cfg
