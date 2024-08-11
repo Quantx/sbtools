@@ -5,8 +5,12 @@
 #include <string.h>
 
 #ifdef __linux__
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #define SEPARATOR '/'
 #else
+#include <windows.h>
 #define SEPARATOR '\\'
 #endif
 
@@ -231,8 +235,19 @@ int decode_xwb(char * basepath, char * xwb_name, char ** track_names) {
         char * ext = codec == XWB_CODEC_WMA ? "wma" : "wav"; 
         
         char path[256];
-        snprintf(path, sizeof(path), "%s%s.%s", basepath, name, ext);
+        snprintf(path, sizeof(path), "%s%s%c", basepath, xwb_name, SEPARATOR);
         
+        #ifdef __linux__
+            if (mkdir(path, 0777) < 0 && errno != EEXIST) {
+        #else
+            if (!CreateDirectory(path, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
+        #endif
+            fprintf(stderr, "Failed to create output directory: %s\n", path);
+            fclose(xwb);
+            return 1;
+        }
+        
+        snprintf(path, sizeof(path), "%s%s%c%s.%s", basepath, xwb_name, SEPARATOR, name, ext);
         FILE * out = fopen(path, "wb");
         if (!out) {
             fprintf(stderr, "Failed to open output file: %s\n", path);
