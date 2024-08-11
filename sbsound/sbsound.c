@@ -369,19 +369,6 @@ int main(int argc, char ** argv) {
         xwb_names[i] = string_table + (i * 16);
     }
     
-    /*
-    char ** cue_names = malloc(cue_count * sizeof(char *));
-    cue_names[0] = string_table + xwb_count * 16;
-    printf("Cue 0000: %s\n", cue_names[0]);
-    for (uint32_t i = 1; i < cue_count; i++) {
-        cue_names[i] = cue_names[i - 1];
-        while (i < string_length && *cue_names[i]) cue_names[i]++;
-        cue_names[i]++;
-        
-        printf("Cue %04d: %s\n", i, cue_names[i]);
-    }
-    */
-    
     int xwb_track_counts[xwb_count];
     char ** xwb_track_names[xwb_count];
     for (uint32_t i = 0; i < xwb_count; i++) {
@@ -409,7 +396,7 @@ int main(int argc, char ** argv) {
         
         uint16_t track = sound->track;
         uint16_t bank = sound->bank;
-        if (sound->track > 1000) {
+        if (!(sound->flags & 0x8)) {
             printf("Cue %04d name \"%.16s\": sound %04d is complex, offset: %08X\n", i, name, cue->sound, sound->offset);
             fseek(xsb, sound->offset, SEEK_SET);
             
