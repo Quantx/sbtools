@@ -308,7 +308,8 @@ int main(int argc, char ** argv) {
             jwObj_int("weapon_motion", weapon_atribs.motion);
 
             jwObj_bool("shoulder", weapon_atribs.flags & 0x0001); // Shoulder weapon or SWEP BOX weapon
-            jwObj_bool("melee",    weapon_atribs.flags & 0x0080);
+            jwObj_bool("shield",   weapon_atribs.flags & 0x0004);
+            jwObj_bool("melee",    weapon_atribs.flags & 0x0008);
             jwObj_bool("mounted",  weapon_atribs.flags & 0x0800); // Whether or not this contributes to "MOUNT OVER"
             jwObj_bool("fixed",    weapon_atribs.flags & 0x1000); // Whether or not this weapon can be unequipped
             

@@ -99,6 +99,8 @@ def main(godot_path, root_path):
     
     ENGDATA_PATH = os.path.join(root_path, "media", "Eng_data")
     
+    SOUND_PATH = os.path.join(root_path, "media", "sndeff")
+
     WEAPDATA_PATH = os.path.join(root_path, "media", "weapon")
 
     # Unpack the XBE
@@ -128,11 +130,6 @@ def main(godot_path, root_path):
         res = subprocess.run([tool_path("binarize"), "-u", bin_path + ".bin"])
         if res.returncode != 0: sys.exit(1)
 
-    # Object textures to patch
-    objTexNames = ["0115"]
-    for i in range(157, 184):
-        objTexNames.append(f"{i:04}")
-
     # Convert Textures
     for tex in os.listdir(BIN_PATHS["TEXTURE"]):
         tex_name, ext = os.path.splitext(tex)
@@ -140,9 +137,6 @@ def main(godot_path, root_path):
         if ext == ".xpr":
             print("Converting texture:", tex_path)
             args = [tool_path("sbtexture"), "-d", tex_path]
-#            if tex_name in objTexNames:
-                # Patch object textures
-#                args = [tool_path("sbtexture"), "-p", tex_path]
 
             res = subprocess.run(args)
             if res.returncode != 0: sys.exit(1)
@@ -253,14 +247,16 @@ def main(godot_path, root_path):
 
     # Convert Terrains
     for terr in os.listdir(TERRAIN_PATH):
-        terr_base, ext = os.path.splitext(terr)
-        terr_path = os.path.join(TERRAIN_PATH, terr_base)
-        if terr_path.endswith("hit"):
-            terr_path = terr_path[:-3]
-        if ext == ".gad":
+        _, ext = os.path.splitext(terr)
+        terr_path = os.path.join(TERRAIN_PATH, terr)
+        if ext == ".gnd":
             print("Converting terrain:", terr_path)
             res = subprocess.run([tool_path("sbterrain"), "-u", terr_path])
             if res.returncode != 0: sys.exit(1)
+
+    # Convert sounds
+    res = subprocess.run([tool_path("sbsound"), os.path.join(SOUND_PATH, "Bank.xsb")])
+    if res.returncode != 0: sys.exit(1)
 
     # Create build directory
     out_path = os.path.join("build", "proprietary", "loc")
@@ -287,15 +283,15 @@ def main(godot_path, root_path):
         if not os.path.isdir(mission_path):
             os.makedirs(mission_path)
         
-        os.replace(os.path.join(TERRAIN_PATH, mapid + "_hit.tga"), os.path.join(mission_path, "hit.tga"))
+        shutil.copy(os.path.join(TERRAIN_PATH, mapid + "hit.gad"), os.path.join(mission_path, "hit.gad"))
         
         try:
-            os.replace(os.path.join(TERRAIN_PATH, mapid + "_texture.tga"), os.path.join(mission_path, "terrain.tga"))
+            os.replace(os.path.join(TERRAIN_PATH, mapid + ".tga"), os.path.join(mission_path, "terrain.tga"))
         except FileNotFoundError:
             pass
         
         try:
-            os.replace(os.path.join(TERRAIN_PATH, mapid + "_height.dds"), os.path.join(mission_path, "height.dds"))
+            os.replace(os.path.join(TERRAIN_PATH, mapid + ".dds"), os.path.join(mission_path, "height.dds"))
         except FileNotFoundError:
             pass
 
