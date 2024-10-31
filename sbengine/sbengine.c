@@ -22,7 +22,7 @@ char json_buffer[1<<20]; // 1MB
 
 const float ms2kmh = 3.6f;
 
-char out_path[256];
+char out_path[512];
 
 char * progname;
 

@@ -293,10 +293,10 @@ int unpackSTG(long map, int tod) {
     jwObj_double("float_0xD4", fval);
     
     fread(&ival, sizeof(uint32_t), 1, stgf);
-    jwObj_int("integer_0xD8", ival);
+    jwObj_int("ticket_a", ival);
 
     fread(&ival, sizeof(uint32_t), 1, stgf);
-    jwObj_int("integer_0xDC", ival);
+    jwObj_int("ticket_b", ival);
     
     fread(&fval, sizeof(float), 1, stgf);
     jwObj_double("clip_ex", fval);

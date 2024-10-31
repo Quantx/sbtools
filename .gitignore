@@ -22,5 +22,7 @@ segment/segment
 segment/segment.exe
 sbsound/sbsound
 sbsound/sbsound.exe
+sbcockpit/sbcockpit
+sbcockpit/sbcockpit.exe
 sbtools/*
 sbtools.zip
