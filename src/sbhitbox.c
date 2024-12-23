@@ -252,7 +252,7 @@ int main(int argc, char ** argv) {
 
             printf("Index %d, Bone ID %d, Part ID %d\n", i, bone_id, part_id);
             
-            if (part_id == 99) continue;            
+            if (part_id == 99) continue;
 
             // There are technically "bone_count + 1" bones including the root bone
             if (bone_id > bone_count) {

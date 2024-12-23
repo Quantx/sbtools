@@ -29,6 +29,7 @@ char * progname;
 char * helpmsg = "Interactive tool used to edit SB engine data files\n"
 "Show help: sbengine -h\n"
 "Edit engine data: sbengine eng_data.eng\n"
+"Export engine data: sbengine -e eng_data.eng\n"
 "Unpack engine data: sbengine -u eng_data.eng\n"
 "Pack engine data: sbengine -p eng_data\n";
 
@@ -161,7 +162,7 @@ char * vt_names[VT_NAME_COUNT] = {
     "Decider Volcanic"
 };
 
-int unpack(char * path) {
+int export(char * path) {
     FILE * engf = fopen(path, "rb");
     if (!engf) {
         fprintf(stderr, "Failed to open: %s\n", path);
@@ -236,25 +237,21 @@ int unpack(char * path) {
     // Read each engine data entry
     int unpack_count = 0;
     for (int i = 0; i < file_count; i++) {
-        struct engine_data engdat;
-        fread(&engdat, file_sizes[i], 1, engf);
-        
         // Skip entries with invalid sizes
-        if (file_sizes[i] != sizeof(struct engine_data)) continue;
+        if (file_sizes[i] != sizeof(struct engine_data)) {
+            fprintf(stderr, "Skipped entry %d due to invalid file size: %d (expected %ld)\n",
+              i, file_sizes[i], sizeof(struct engine_data));
+            continue;
+        }
+        
+        struct engine_data engdat;
+        fread(&engdat, sizeof(struct engine_data), 1, engf);
         
         jwArr_object();
         
         const uint8_t gens[6] = {0, 1, 2, 1, 0, 1};
         uint8_t gen = gens[engdat.cockpit_type];
 
-        if (engdat.id == 21) { // Behemoth is too slow
-            const float speedFactor = 1.18;
-            engdat.rpm1 *= speedFactor;
-            engdat.rpm2 *= speedFactor;
-            engdat.max_rpm *= speedFactor;
-            engdat.override_rpm *= speedFactor;
-        }
-        
         jwObj_int("id", engdat.id);
         jwObj_int("manufacturer", manufacturers[i]);
         jwObj_int("gen", gen);
@@ -391,6 +388,54 @@ int unpack(char * path) {
     return 0;
 }
 
+int unpack(char * path) {
+    FILE * engf = fopen(path, "rb");
+    if (!engf) {
+        fprintf(stderr, "Failed to open: %s\n", path);
+        return 1;
+    }
+    
+    char * sep = strrchr(path, SEPARATOR);
+    if (sep) sep[1] = '\0';
+    else *path = '\0';
+    
+    // Read file header
+    uint32_t file_count;
+    fread(&file_count, sizeof(uint32_t), 1, engf);
+    
+    printf("Unpacking %u engine data files\n", file_count);
+    
+    uint32_t file_sizes[file_count];
+    fread(&file_sizes, sizeof(uint32_t), file_count, engf);
+    
+    for (int i = 0; i < file_count; i++) {
+        // Skip entries with invalid sizes
+        if (file_sizes[i] != sizeof(struct engine_data)) {
+            fprintf(stderr, "Skipped entry %d due to invalid file size: %d (expected %ld)\n",
+              i, file_sizes[i], sizeof(struct engine_data));
+            continue;
+        }
+        
+        struct engine_data engdat;
+        fread(&engdat, sizeof(struct engine_data), 1, engf);
+        
+        snprintf(out_path, sizeof(out_path), "%sengdat%02d.eng", path, i);
+        
+        FILE * outf = fopen(out_path, "wb");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            fclose(engf);
+            return 1;
+        }
+        
+        fwrite(&engdat, sizeof(struct engine_data), 1, outf);
+        fclose(outf);
+    }
+    
+    fclose(engf);
+    return 0;
+}
+
 int pack(char * path) {
     fprintf(stderr, "Unimplimented\n");
     return 1;
@@ -423,7 +468,8 @@ int main(int argc, char ** argv) {
 
     char * path = *argv;
     
-    if (progmode == 'u') return unpack(path);
+    if (progmode == 'e') return export(path);
+    else if (progmode == 'u') return unpack(path);
     else if (progmode == 'p') return pack(path);
     
     // Check file extension
@@ -543,9 +589,9 @@ int main(int argc, char ** argv) {
         if (vt->tier_r > 0) {
             printf("\x1B[39C Speed  |     Normal |   Override\n");
             for (int g = 0; g < 6; g++) {
-                float divisor = vt->gear_f * vt->gears[g] * vt->tier_r * 433.0;
-                float normal = vt->max_rpm / divisor;
-                float override = vt->override_rpm / divisor;
+                float transmission = (vt->tier_r * 5235.0f) / (vt->gear_f * vt->gears[g] * 100000.0f);
+                float normal = vt->max_rpm * transmission;
+                float override = vt->override_rpm * transmission;
                 printf("\x1B[39C Gear %c | %6.2fkm/h | %6.2fkm/h\n", g ? '0' + g : 'R', normal * ms2kmh, override * ms2kmh);
             }
             

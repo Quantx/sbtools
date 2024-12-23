@@ -340,11 +340,11 @@ int main(int argc, char ** argv) {
         return 1;
     }
     
-    long map = strtol(*argv, NULL, 10);
+    long map = strtoul(*argv, NULL, 10);
     argv++; argc--;
     
-    if (map < 0 || map > 24) {
-        fprintf(stderr, "Invalid map number %ld, should be between 0 and 24\n", map);
+    if (map < 0 || map > 26) {
+        fprintf(stderr, "Invalid map number %ld, should be between 0 and 26\n", map);
         return 1;
     }
 
@@ -353,6 +353,19 @@ int main(int argc, char ** argv) {
     } else {
         basepath = "";
     }
+
+    snprintf(path, sizeof(path), "%s.data.seg", basepath);
+    FILE * datf = fopen(path, "rb");
+    if (!datf) {
+        fprintf(stderr, "Failed to open .data.seg, ensure you've copied it after running: segment -u default.xbe\n");
+        return 1;
+    }
+    
+    int32_t missionIDs[27];
+    fseek(datf, 0x59518, SEEK_SET);
+    fread(missionIDs, sizeof(int32_t), 27, datf);
+    
+    fclose(datf);
 
     snprintf(path, sizeof(path), "%smap%02ld.json", basepath, map);
     FILE * outf = fopen(path, "w");
@@ -366,6 +379,8 @@ int main(int argc, char ** argv) {
     // All default maps are this size
     jwObj_int("width", 280);
     jwObj_int("height", 280);
+
+    jwObj_int("id", missionIDs[map]);
 
     jwObj_array("stage");
     for (int i = 0; i < 4; i++) {

@@ -366,7 +366,7 @@ int unpack(char * path) {
         }
         
         printf("Extracting section: %s\n", seg_name);
-        printf("Offset %08X, Size %d, Vaddr %08X, Vsize %d, Diff %d\n", sections[i].faddr, sections[i].fsize, sections[i].vaddr, sections[i].vsize, sections[i].vsize - sections[i].fsize);
+        printf("Offset %08X, Size %d, Vaddr %08X, Vsize %08X, Diff %d\n", sections[i].faddr, sections[i].fsize, sections[i].vaddr, sections[i].vsize, sections[i].vsize - sections[i].fsize);
         printf("Head %08X, Tail %08X\n", sections[i].head_ref_count_addr, sections[i].tail_ref_count_addr);
         
         fseek(xbef, sections[i].faddr, SEEK_SET);

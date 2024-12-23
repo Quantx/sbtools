@@ -102,6 +102,8 @@ def main(godot_path, root_path):
     SOUND_PATH = os.path.join(root_path, "media", "sndeff")
 
     WEAPDATA_PATH = os.path.join(root_path, "media", "weapon")
+    
+    EFFECT_PATH = os.path.join(root_path, "media", "effdata")
 
     # Unpack the XBE
     XBE_PATH = os.path.join(root_path, "default")
@@ -112,7 +114,11 @@ def main(godot_path, root_path):
     STAGE_PATH = os.path.join(root_path, "media", "StgData")
     for i in range(0, 31, 1):
         os.replace(os.path.join(XBE_PATH, f"seg{i:02}.seg"), os.path.join(STAGE_PATH, f"seg{i:02}.seg"))
-        
+    
+    # Move .data segment to stage data folder
+    shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(STAGE_PATH, f".data.seg"))
+    shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(STAGE_PATH, f".data.hdr"))
+    
     # Copy .data segment to Eng_data folder
     shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(ENGDATA_PATH, f".data.seg"))
     shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(ENGDATA_PATH, f".data.hdr"))
@@ -219,6 +225,11 @@ def main(godot_path, root_path):
             
             print("Adding motion file:", lmt_path, "To glTF file:", gltf_path)
             subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path])
+    
+    # Cockpit lighting
+    subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "AMBPACK.amb")])
+    subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "PLPACK.coc" )])
+    subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "BTLPACK.cbt")])
 
     # Map Object Animations
     for i, gltf in enumerate([902, 906, 916, 928, 930, 932, 962]):
@@ -258,6 +269,22 @@ def main(godot_path, root_path):
     res = subprocess.run([tool_path("sbsound"), os.path.join(SOUND_PATH, "Bank.xsb")])
     if res.returncode != 0: sys.exit(1)
 
+    # Unpack effects
+    res = subprocess.run([tool_path("sbeffect"), os.path.join(EFFECT_PATH, "effect.efp")])
+    if res.returncode != 0: sys.exit(1)
+    
+    # Convert effects
+    for effect in os.listdir(EFFECT_PATH):
+        _, ext = os.path.splitext(effect)
+        eff_path = os.path.join(EFFECT_PATH, effect)
+        if ext in [".efe", ".seq", ".uv2"]:
+            res = subprocess.run([tool_path("sbeffect"), eff_path])
+            if res.returncode != 0: sys.exit(1)
+    
+    # Extract engine effect data
+    res = subprocess.run([tool_path("sbeffect"), os.path.join(XBE_PATH, ".data.seg")])
+    if res.returncode != 0: sys.exit(1)
+
     # Create build directory
     out_path = os.path.join("build", "proprietary", "loc")
     if not os.path.isdir(out_path):
@@ -276,7 +303,7 @@ def main(godot_path, root_path):
     
     # Copy all map data
     STAGE_PATH = os.path.join(root_path, "media", "StgData", "") # The Extra string forces a trailing slash
-    for i in range(0, 25, 1):
+    for i in range(0, 27, 1):
         mapid = f"map{i:02}"
 
         mission_path = os.path.join(out_path, "maps", mapid)
@@ -318,7 +345,13 @@ def main(godot_path, root_path):
         
         skytex1 = (i * 2) + 266
         try:
-            os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{skytex1:04}.dds"), os.path.join(mission_path, "sky1.dds"))
+            if skytex1 == 316: # Reuse skytex1 for mission 25 and 26
+                shutil.copy(os.path.join(BIN_PATHS["TEXTURE"], "0316.dds"), os.path.join(mission_path, "sky1.dds"))
+            else:
+                if skytex1 == 318:
+                    skytex1 = 316
+                
+                os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{skytex1:04}.dds"), os.path.join(mission_path, "sky1.dds"))
         except FileNotFoundError:
             pass
             
@@ -376,6 +409,22 @@ def main(godot_path, root_path):
         for obj in range(objstart, objend, 1):
             os.replace(os.path.join(BIN_PATHS["MODEL"], f"{obj:04}.gltf"),  os.path.join(cockpit_path, f"{obj:04}.gltf"))
             os.replace(os.path.join(BIN_PATHS["MODEL"], f"{obj:04}.glbin"), os.path.join(cockpit_path, f"{obj:04}.glbin"))
+        
+        # Copy boot lighting data
+        for j, offset in enumerate([0, 1, 2, 21, 22, 23, 24]):
+            btId = i * 3 + offset
+            # Use a copy here to fix a problem where 21 and 24 overlap
+            shutil.copy(os.path.join(COCKPIT_PATH, f"BTLIG_{btId:02}.json"), os.path.join(cockpit_path, f"BTLIG_{j}.json"))
+            shutil.copy(os.path.join(COCKPIT_PATH, f"BTAMB_{btId:02}.json"), os.path.join(cockpit_path, f"BTAMB_{j}.json"))
+        
+        # Copy ambient and dynamic lights
+        lig0 = i
+        os.replace(os.path.join(COCKPIT_PATH, f"PLIG_{lig0:02}.json"), os.path.join(cockpit_path, "PLIG_0.json"))
+        os.replace(os.path.join(COCKPIT_PATH,  f"AMB_{lig0:02}.json"), os.path.join(cockpit_path, "AMB_0.json"))
+        
+        lig1 = i + 6
+        os.replace(os.path.join(COCKPIT_PATH, f"PLIG_{lig1:02}.json"), os.path.join(cockpit_path, "PLIG_1.json"))
+        os.replace(os.path.join(COCKPIT_PATH,  f"AMB_{lig1:02}.json"), os.path.join(cockpit_path, "AMB_1.json"))
     
     # Copy cockpit ejection bar
     os.replace(os.path.join(BIN_PATHS["MODEL"], "1323.gltf"),  os.path.join(cockpit_base_path, "1323.gltf"))
@@ -422,6 +471,11 @@ def main(godot_path, root_path):
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{wepid:04}.gltf"),  os.path.join(weapon_path, f"{wepid:04}.gltf"))
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{wepid:04}.glbin"), os.path.join(weapon_path, f"{wepid:04}.glbin"))
     
+    # Copy bullet models
+    for i in range(1186, 1216, 2):
+        os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.gltf"),  os.path.join(weapon_path, f"{i:04}.gltf"))
+        os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.glbin"), os.path.join(weapon_path, f"{i:04}.glbin"))
+    
     # Copy weapon hitboxes
     for hbxid in range(211, 251):
         gltf = hbx_to_gltf(hbxid)
@@ -449,8 +503,7 @@ def main(godot_path, root_path):
     
     # Copy menu textures
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0106.dds"), os.path.join(menu_path, "online.dds"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0113.dds"), os.path.join(menu_path, "controller.dds"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0115.dds"), os.path.join(menu_path, "texture.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0115.dds"), os.path.join(menu_path, "object.dds"))
     
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0319.dds"), os.path.join(menu_path, "company0.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0320.dds"), os.path.join(menu_path, "company1.dds"))
@@ -472,12 +525,36 @@ def main(godot_path, root_path):
     effect_path = os.path.join(out_path, "effects")
     if not os.path.isdir(effect_path):
         os.makedirs(effect_path)
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0322.dds"), os.path.join(effect_path, "eject.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0105.dds"), os.path.join(effect_path, "smallfont.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0107.dds"), os.path.join(effect_path, "spritesheet0.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0108.dds"), os.path.join(effect_path, "spritesheet1.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0109.dds"), os.path.join(effect_path, "scanlines.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0110.dds"), os.path.join(effect_path, "loading.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0111.dds"), os.path.join(effect_path, "flash.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0112.dds"), os.path.join(effect_path, "palette.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0113.dds"), os.path.join(effect_path, "controller0.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0114.dds"), os.path.join(effect_path, "controller1.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0132.dds"), os.path.join(effect_path, "uisheet0.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0318.dds"), os.path.join(effect_path, "uisheet1.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0322.dds"), os.path.join(effect_path, "eject.dds"))
+    
+    # Copy effect table
+    shutil.copy(os.path.join(EFFECT_PATH, "effect.tbl"), os.path.join(effect_path, "effect_ids.data"))
+    
+    # Copy effect light data
+    os.replace(os.path.join(XBE_PATH, "lightdata.json"), os.path.join(effect_path, "lightdata.json"))
+    
+    # Copy effect data
+    for effect in os.listdir(EFFECT_PATH):
+        _, ext = os.path.splitext(effect)
+        eff_path = os.path.join(EFFECT_PATH, effect)
+        if ext == ".json":
+            os.replace(eff_path, os.path.join(effect_path, effect))
+    
+    # Copy effect models
+    for i in range(1216, 1236, 2):
+        os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.gltf"),  os.path.join(effect_path, f"{i:04}.gltf"))
+        os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.glbin"), os.path.join(effect_path, f"{i:04}.glbin"))
     
     # Copy water textures
     water_path = os.path.join(out_path, "water")
@@ -486,21 +563,6 @@ def main(godot_path, root_path):
     for i in range(0, 10):
         waterid = 116 + i
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{waterid:04}.dds"), os.path.join(water_path, f"water{i}.dds"))
-
-
-    for i in range(1186, 1236, 2):
-        os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.gltf"),  os.path.join(effect_path, f"{i:04}.gltf"))
-        os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.glbin"), os.path.join(effect_path, f"{i:04}.glbin"))
-
-    # Copy UI textures
-    ui_path = os.path.join(out_path, "ui")
-    if not os.path.isdir(ui_path):
-        os.makedirs(ui_path)
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0114.dds"), os.path.join(ui_path, "controller.dds"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0132.dds"), os.path.join(ui_path, "spritesheet0.dds"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0318.dds"), os.path.join(ui_path, "spritesheet1.dds"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0110.dds"), os.path.join(ui_path, "loading.dds"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0105.dds"), os.path.join(ui_path, "smallfont.dds"))
 
     # Copy Emblems
     emblem_path = os.path.join(out_path, "emblems")

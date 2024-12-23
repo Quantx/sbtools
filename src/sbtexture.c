@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "../dds.h"
+#include "dds.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
