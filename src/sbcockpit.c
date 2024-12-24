@@ -84,14 +84,14 @@ struct vector2 {
     float x, y;
 };
 
-struct os_subdraw_command {
+struct os_subdraw_line {
     struct vector2 start;
     struct vector2 end;
 };
 
 struct os_subdraw_pointer {
     uint32_t count;
-    uint32_t pointer;
+    uint32_t offset;
 };
 
 struct os_entry_0 { // Null entry
@@ -133,13 +133,13 @@ struct os_entry_sprite { // Sprite
     uint32_t unknown[4]; // All 0s?
 };
 
-struct os_entry_5 {
+struct os_entry_subdraw {
     float x;
     float y;
     uint32_t color;
     float x2;
     float y2;
-    uint32_t value;
+    uint32_t id;
     uint32_t unknown[8];
 };
 
@@ -175,7 +175,7 @@ struct os_entry { // 64 bytes (16 x 4)
         struct os_entry_quad quad; // 0x2
         struct os_entry_line line; // 0x3
         struct os_entry_sprite sprite; // 0x4
-        struct os_entry_5 os5;
+        struct os_entry_subdraw subdraw; // 0x5
         struct os_entry_8 os8;
         struct os_entry_10 os10;
         struct os_entry_20 os20;
@@ -501,11 +501,11 @@ int unpackOS(char * path) {
         return 1;
     }
     
-    strncpy(out_path, path, sizeof(out_path));
-    char * ext = strrchr(out_path, separator);
-    if (ext) *ext = '\0';
-    else *out_path = '\0';
+    char * ext = strrchr(path, separator);
+    if (ext) ext[1] = '\0';
+    else *path = '\0';
     
+    strcpy(out_path, path);
     strcat(out_path, "os.str");
     FILE * text_file = fopen(out_path, "r");
     if (!text_file) {
@@ -542,8 +542,7 @@ int unpackOS(char * path) {
     
     fclose(text_file);
     
-    if (ext) *ext = '\0';
-    else *out_path = '\0';
+    strcpy(out_path, path);
     strcat(out_path, ".data.hdr");
     
     FILE * hdrf = fopen(out_path, "rb");
@@ -557,8 +556,7 @@ int unpackOS(char * path) {
     
     fclose(hdrf);
     
-    if (ext) *ext = '\0';
-    else *out_path = '\0';
+    strcpy(out_path, path);
     strcat(out_path, ".data.seg");
     
     FILE * datf = fopen(out_path, "rb");
@@ -568,189 +566,221 @@ int unpackOS(char * path) {
     }
     
     fseek(datf, 0x451B8, SEEK_SET);
-    struct os_subdraw_pointer subdraw_ptrs[39];
-    fread(subdraw_ptrs, sizeof(struct os_subdraw_pointer), 39, datf);
+    struct os_subdraw_pointer subdraw_ptrs[38];
+    fread(subdraw_ptrs, sizeof(struct os_subdraw_pointer), 38, datf);
     
-    for (int i = 0; i < 39; i++) {
-        printf("%d: %d %08X\n", i, subdraw_ptrs[i].count, subdraw_ptrs[i].pointer);
+    int subdraw_count = 0;
+    for (int i = 0; i < 38; i++) {
+        subdraw_count += subdraw_ptrs[i].count;
+    }
+    
+    struct os_subdraw_line * subdraw[38];
+    struct os_subdraw_line * subdraw_data = malloc(subdraw_count * sizeof(struct os_subdraw_line));
+    
+    subdraw_count = 0;
+    for (int i = 0; i < 38; i++) {
+        subdraw[i] = subdraw_data + subdraw_count;
+        fseek(datf, subdraw_ptrs[i].offset - hdr_data.vaddr, SEEK_SET);
+        fread(subdraw[i], sizeof(struct os_subdraw_line), subdraw_ptrs[i].count, datf);
+        subdraw_count += subdraw_ptrs[i].count;
     }
     
     fclose(datf);
     
-    strncpy(out_path, path, sizeof(out_path));
-    ext = strrchr(out_path, '.');
-    if (ext) *ext = '\0';
-    strcat(out_path, ".svg");
+    uint32_t file_count;
+    fread(&file_count, sizeof(uint32_t), 1, os);
     
-    FILE * out = fopen(out_path, "w");
-    if (!out) {
-        fprintf(stderr, "Failed to open output file: %s\n", out_path);
-        fclose(out);
-        return 1;
-    }
+    printf("Converting %d OS files\n", file_count);
     
-    fprintf(out, "<svg version=\"1.1\" width=\"512\" height=\"512\" xmlns=\"http://www.w3.org/2000/svg\">\n");
-    fprintf(out, "<rect width=\"100%%\" height=\"100%%\" fill=\"black\"/>\n");
+    struct file_entry files[file_count];
+    fread(files, sizeof(struct file_entry), file_count, os);
     
-    uint32_t frame_count;
-    fread(&frame_count, sizeof(uint32_t), 1, os);
-    
-    printf("OS file has %d frames\n", frame_count);
-    
-    int index = -1;
-    while (true) {
-        unsigned long pos = ftell(os);
-    
-        index++;
-    
-        struct os_entry entry;
-        if (fread(&entry, sizeof(struct os_entry), 1, os) != 1) {
-            break;
-        }
+    for (int f = 0; f < file_count; f++) {
+        fseek(os, files[f].offset, SEEK_SET);
         
-        if (entry.frame == -1) {
-            continue;
-        }
-        
-        printf("Entry type 0x%02X at 0x%08lX, frame %d: ", entry.type, pos, entry.frame);
-        
-        switch (entry.type) {
-        case 0x0:
-            for (int i = 0; i < 14; i++) {
-                if (entry.os0.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            printf("N/A\n");
-        break;
-        case 0x1:
-            for (int i = 0; i < 9; i++) {
-                if (entry.text.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            
-            if (entry.text.id >= text_lines) {
-                printf("ERROR: Text ID %d >= text_lines %ld\n", entry.text.id, text_lines);
-                return 1;
-            }
-            
-            printf("SVG\n");
-            
-            fprintf(out, "<text index=\"%d\" frame=\"%d\" x=\"%.0f\" y=\"%.0f\" color=\"%08X\" fill=\"#%06X\" arg=\"%d\">%s</text>\n",
-                index, entry.frame,
-                entry.text.pos.x, entry.text.pos.y,
-                entry.text.color, entry.text.color & 0xFFFFFF,
-                entry.text.arg, text[entry.text.id]);
-        break;
-        case 0x2:
-            if (entry.quad.unknown[0] || entry.quad.unknown[1]) {
-                printf("unknown non-zero value\n");
-                return 1;
-            }
-            printf("SVG\n");
-
-fprintf(out, "<polygon index=\"%d\" frame=\"%d\" points=\"%.0f,%.0f %.0f,%.0f %.0f,%.0f %.0f,%.0f\" colors=\"%08X %08X %08X %08X\" fill=\"#%06X\"/>\n",
-                index, entry.frame,
-                entry.quad.points[0].x, entry.quad.points[0].y,
-                entry.quad.points[1].x, entry.quad.points[1].y,
-                entry.quad.points[2].x, entry.quad.points[2].y,
-                entry.quad.points[3].x, entry.quad.points[3].y,
-                entry.quad.colors[0],
-                entry.quad.colors[1],
-                entry.quad.colors[2],
-                entry.quad.colors[3],
-                entry.quad.colors[0]);
-        break;
-        case 0x3:
-            for (int i = 0; i < 9; i++) {
-                if (entry.line.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            printf("SVG\n");
-            
-            fprintf(out, "<line index=\"%d\" frame=\"%d\" x1=\"%.0f\" y1=\"%.0f\" x2=\"%.0f\" y2=\"%.0f\" color=\"%08X\" stroke=\"#%06X\"/>\n",
-                index, entry.frame,
-                entry.line.start.x, entry.line.start.y, entry.line.end.x, entry.line.end.y,
-                entry.line.color, entry.line.color);
-        break;
-        case 0x4:
-            for (int i = 0; i < 4; i++) {
-                if (entry.sprite.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            printf("(%.2fX %.2fY %.2fW %.2fH), (%.2fX %.2fY %.2fW %.2fH), color %08X, value %d\n",
-                entry.sprite.x, entry.sprite.y, entry.sprite.w, entry.sprite.h,
-                entry.sprite.x2, entry.sprite.y2, entry.sprite.w2, entry.sprite.h2,
-                entry.sprite.color, entry.sprite.id);
-            
-        break;
-        case 0x5:
-            for (int i = 0; i < 8; i++) {
-                if (entry.os5.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            printf("(%.2fX %.2fY), color %08X, (%.2fX %.2fY), value %d\n",
-                entry.os5.x, entry.os5.y, entry.os5.color,
-                entry.os5.x2, entry.os5.y2, entry.os5.value);
-        break;
-        case 0x8:
-            for (int i = 0; i < 12; i++) {
-                if (entry.os8.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            printf("%d, color %08X\n",
-                entry.os8.value0, entry.os8.color);
-        break;
-        case 0x10:  
-            for (int i = 0; i < 9; i++) {
-                if (entry.os10.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            printf("%d, colors (%08X %08X %08X %08X)\n",
-                entry.os10.value, entry.os10.colors[0], entry.os10.colors[1], entry.os10.colors[2], entry.os10.colors[3]);
-        break;
-        case 0x20:
-            for (int i = 0; i < 13; i++) {
-                if (entry.os20.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            printf("%d\n", entry.os20.value);
-        break;
-        case 0x40:
-            for (int i = 0; i < 10; i++) {
-                if (entry.os40.unknown[i]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-            }
-            printf("(%.2f), value %d\n", entry.os40.x, entry.os40.value);
-        break;
-        default:
-            printf("UNKNOWN ENTRY TYPE\n");
+        if ((files[f].length - 4) % sizeof(struct os_entry)) {
+            fprintf(stderr, "File length %d not evenly divisible by OS entry size %ld\n",
+                files[f].length - 4, sizeof(struct os_entry));
+            fclose(os);
             return 1;
         }
+        
+        snprintf(out_path, sizeof(out_path), "%sos_%02d.svg", path, f);
+        FILE * out = fopen(out_path, "w");
+        if (!out) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            fclose(out);
+            return 1;
+        }
+        
+        uint32_t entry_count;
+        fread(&entry_count, sizeof(uint32_t), 1, os);
+        
+        fprintf(out, "<svg version=\"1.1\" width=\"512\" height=\"512\" xmlns=\"http://www.w3.org/2000/svg\">\n");
+        fprintf(out, "<rect width=\"100%%\" height=\"100%%\" fill=\"black\"/>\n");
+        
+        int os_count = (files[f].length - 4) / sizeof(struct os_entry);
+        for (int j = 0; j < os_count; j++) {
+            struct os_entry entry;
+            if (fread(&entry, sizeof(struct os_entry), 1, os) != 1) {
+                fprintf(stderr, "Failed to get entry %d from file %d\n", j, f);
+                fclose(os);
+                return 1;
+            }
+            
+            if (entry.frame == -1) {
+                continue;
+            }
+            
+            //long pos = ftell(os) - sizeof(struct os_entry);
+            //printf("Entry type 0x%02X at 0x%08lX, frame %d: ", entry.type, pos, entry.frame);
+            
+            switch (entry.type) {
+            case 0x0:
+                for (int i = 0; i < 14; i++) {
+                    if (entry.os0.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+            break;
+            case 0x1:
+                for (int i = 0; i < 9; i++) {
+                    if (entry.text.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+                
+                if (entry.text.id >= text_lines) {
+                    printf("ERROR: Text ID %d >= text_lines %ld\n", entry.text.id, text_lines);
+                    return 1;
+                }
+                
+                fprintf(out, "<text index=\"%d\" frame=\"%d\" x=\"%.0f\" y=\"%.0f\" color=\"%08X\" fill=\"#%06X\" arg=\"%d\">%s</text>\n",
+                    j, entry.frame,
+                    entry.text.pos.x, entry.text.pos.y,
+                    entry.text.color, entry.text.color & 0xFFFFFF,
+                    entry.text.arg, text[entry.text.id]);
+            break;
+            case 0x2:
+                if (entry.quad.unknown[0] || entry.quad.unknown[1]) {
+                    printf("unknown non-zero value\n");
+                    return 1;
+                }
+                fprintf(out, "<polygon index=\"%d\" frame=\"%d\" points=\"%.0f,%.0f %.0f,%.0f %.0f,%.0f %.0f,%.0f\" colors=\"%08X %08X %08X %08X\" fill=\"#%06X\"/>\n",
+                    j, entry.frame,
+                    entry.quad.points[0].x, entry.quad.points[0].y,
+                    entry.quad.points[1].x, entry.quad.points[1].y,
+                    entry.quad.points[2].x, entry.quad.points[2].y,
+                    entry.quad.points[3].x, entry.quad.points[3].y,
+                    entry.quad.colors[0],
+                    entry.quad.colors[1],
+                    entry.quad.colors[2],
+                    entry.quad.colors[3],
+                    entry.quad.colors[0]);
+            break;
+            case 0x3:
+                for (int i = 0; i < 9; i++) {
+                    if (entry.line.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+                fprintf(out, "<line index=\"%d\" frame=\"%d\" x1=\"%.0f\" y1=\"%.0f\" x2=\"%.0f\" y2=\"%.0f\" color=\"%08X\" stroke=\"#%06X\"/>\n",
+                    j, entry.frame,
+                    entry.line.start.x, entry.line.start.y, entry.line.end.x, entry.line.end.y,
+                    entry.line.color, entry.line.color);
+            break;
+            case 0x4:
+                for (int i = 0; i < 4; i++) {
+                    if (entry.sprite.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+                printf("(%.2fX %.2fY %.2fW %.2fH), (%.2fX %.2fY %.2fW %.2fH), color %08X, value %d\n",
+                    entry.sprite.x, entry.sprite.y, entry.sprite.w, entry.sprite.h,
+                    entry.sprite.x2, entry.sprite.y2, entry.sprite.w2, entry.sprite.h2,
+                    entry.sprite.color, entry.sprite.id);
+                
+            break;
+            case 0x5:
+                for (int i = 0; i < 8; i++) {
+                    if (entry.subdraw.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+                
+                uint32_t sd = entry.subdraw.id;
+                
+                if (sd >= 38) {
+                    fprintf(stderr, "Invalid subdraw ID %d\n", sd);
+                    return 1;
+                }
+                
+                fprintf(out, "<g index=\"%d\" frame=\"%d\" color=\"%08X\" stroke=\"#%06X\">\n",
+                    j, entry.frame, entry.subdraw.color, entry.subdraw.color);
+                for (int i = 0; i < subdraw_ptrs[sd].count; i++) {
+                    struct os_subdraw_line * line = subdraw[sd] + i;
+                    fprintf(out, "\t<line x1=\"%.0f\" y1=\"%.0f\" x2=\"%.0f\" y2=\"%.0f\"/>\n",
+                        entry.subdraw.x + line->start.x, entry.subdraw.y + line->start.y,
+                        entry.subdraw.x + line->end.x, entry.subdraw.y + line->end.y);
+                }
+                fprintf(out, "</g>\n");
+            break;
+            case 0x8:
+                for (int i = 0; i < 12; i++) {
+                    if (entry.os8.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+                printf("%d, color %08X\n",
+                    entry.os8.value0, entry.os8.color);
+            break;
+            case 0x10:  
+                for (int i = 0; i < 9; i++) {
+                    if (entry.os10.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+                printf("%d, colors (%08X %08X %08X %08X)\n",
+                    entry.os10.value, entry.os10.colors[0], entry.os10.colors[1], entry.os10.colors[2], entry.os10.colors[3]);
+            break;
+            case 0x20:
+                for (int i = 0; i < 13; i++) {
+                    if (entry.os20.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+                printf("%d\n", entry.os20.value);
+            break;
+            case 0x40:
+                for (int i = 0; i < 10; i++) {
+                    if (entry.os40.unknown[i]) {
+                        printf("unknown non-zero value\n");
+                        return 1;
+                    }
+                }
+                printf("(%.2f), value %d\n", entry.os40.x, entry.os40.value);
+            break;
+            default:
+                printf("UNKNOWN ENTRY TYPE\n");
+                return 1;
+            }
+        }
+        
+        fprintf(out, "</svg>\n");
+        fclose(out);
     }
     
-    fprintf(out, "</svg>\n");
-    
     free(text);
+    free(subdraw_data);
     
-    fclose(out);
     fclose(os);
     return 0;
 }
