@@ -9,7 +9,7 @@ ODIR=bin
 TARGETS=binarize segment sbbump sbcockpit sbeffect sbengine sbhitbox sbmodel \
 	sbmotion sbshader sbsound sbstage sbterrain sbtext sbtexture sbweapon
 
-CFLAGS=-static -lm -I$(IDIR)
+CFLAGS=-static -g -lm -I$(IDIR)
 
 .PHONY: all linux win clean
 all: linux win

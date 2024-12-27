@@ -123,6 +123,10 @@ def main(godot_path, root_path):
     shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(ENGDATA_PATH, f".data.seg"))
     shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(ENGDATA_PATH, f".data.hdr"))
 
+    # Copy .data segment to cockpit folder
+    shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(COCKPIT_PATH, f".data.seg"))
+    shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(COCKPIT_PATH, f".data.hdr"))
+
     # Copy .data segment to Weapon folder
     shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(WEAPDATA_PATH, f".data.seg"))
     shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(WEAPDATA_PATH, f".data.hdr"))
@@ -230,6 +234,9 @@ def main(godot_path, root_path):
     subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "AMBPACK.amb")])
     subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "PLPACK.coc" )])
     subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "BTLPACK.cbt")])
+    
+    # Cockpit OS Animations
+    subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "OS.os")])
 
     # Map Object Animations
     for i, gltf in enumerate([902, 906, 916, 928, 930, 932, 962]):
@@ -376,11 +383,13 @@ def main(godot_path, root_path):
     # Copy cockpits
     cockpit_base_path = os.path.join(out_path, "cockpit")
     cockpit_objs = [1238, 1256, 1271, 1284, 1298, 1310, 1322]
+    os_lookup = [0, 1, 2, 1, 0, 1]
+    os_uvs = ["coko0", "coko1", "coko2", "cowm1", "coly0", "coak1"]
     for i, name in enumerate(["gen1", "gen2", "gen3", "jar", "gen1s", "gen2s"]):
         cockpit_path = os.path.join(cockpit_base_path, name)
         if not os.path.isdir(cockpit_path):
             os.makedirs(cockpit_path)
-    
+        
         texid = i
 
         # Gen 2 / Jar have swapped textures
@@ -425,6 +434,18 @@ def main(godot_path, root_path):
         lig1 = i + 6
         os.replace(os.path.join(COCKPIT_PATH, f"PLIG_{lig1:02}.json"), os.path.join(cockpit_path, "PLIG_1.json"))
         os.replace(os.path.join(COCKPIT_PATH,  f"AMB_{lig1:02}.json"), os.path.join(cockpit_path, "AMB_1.json"))
+        
+        # Copy OS files
+        osId = os_lookup[i] * 2
+        for j in range(6):
+            os0 = j * 6 + osId
+            os1 = j * 6 + osId + 1
+            
+            shutil.copy(os.path.join(COCKPIT_PATH, f"os_{os0:02}.json"), os.path.join(cockpit_path, f"os_{j}A.json"))
+            shutil.copy(os.path.join(COCKPIT_PATH, f"os_{os1:02}.json"), os.path.join(cockpit_path, f"os_{j}B.json"))
+        
+        osUV = os_uvs[i]
+        shutil.copy(os.path.join(COCKPIT_PATH, f"{osUV}uv.uv"), os.path.join(cockpit_path, "os_uv.data"))
     
     # Copy cockpit ejection bar
     os.replace(os.path.join(BIN_PATHS["MODEL"], "1323.gltf"),  os.path.join(cockpit_base_path, "1323.gltf"))
@@ -432,6 +453,12 @@ def main(godot_path, root_path):
 
     # Copy cockpit strings
     shutil.copy(os.path.join(COCKPIT_PATH, "os.str"), os.path.join(cockpit_base_path, "os.txt"))
+    
+    # Copy cockpit OS line templates
+    os.replace(os.path.join(COCKPIT_PATH, "os_lines.json"), os.path.join(cockpit_base_path, "os_lines.json"))
+    os.replace(os.path.join(COCKPIT_PATH, "os_unknown_0.json"), os.path.join(cockpit_base_path, "os_unknown_0.json"))
+    os.replace(os.path.join(COCKPIT_PATH, "os_unknown_1.json"), os.path.join(cockpit_base_path, "os_unknown_1.json"))
+    os.replace(os.path.join(COCKPIT_PATH, "os_unknown_2.json"), os.path.join(cockpit_base_path, "os_unknown_2.json"))
 
     # Copy VTs
     mech_base_path = os.path.join(out_path, "mechs")
@@ -459,7 +486,7 @@ def main(godot_path, root_path):
             os.replace(os.path.join(BIN_PATHS["MODEL"], f"{vthid:04}.glbin"), os.path.join(mech_path, f"{vthid:04}.glbin"))
     
     # Copy engine data
-    res = subprocess.run([tool_path("sbengine"), "-u", os.path.join(ENGDATA_PATH, "eng_data.eng")])
+    res = subprocess.run([tool_path("sbengine"), "-e", os.path.join(ENGDATA_PATH, "eng_data.eng")])
     if res.returncode != 0: sys.exit(1)
     os.replace(os.path.join(ENGDATA_PATH, "mechdata.json"), os.path.join(mech_base_path, "mechdata.json"))
     

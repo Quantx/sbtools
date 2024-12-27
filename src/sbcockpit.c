@@ -84,104 +84,121 @@ struct vector2 {
     float x, y;
 };
 
-struct os_subdraw_line {
-    struct vector2 start;
-    struct vector2 end;
-};
-
-struct os_subdraw_pointer {
+struct os_lines_pointer {
     uint32_t count;
     uint32_t offset;
 };
 
-struct os_entry_0 { // Null entry
-    uint32_t unknown[14]; // All 0s?
-};
-
-struct os_entry_text {
+struct os_draw_text {
     struct vector2 pos;
     uint32_t id;
     uint32_t arg;
-    uint32_t unknown[9]; // All 0s?
+    uint32_t padding[9]; // All 0s?
     uint32_t color; // Always 0x0000FFAA
 };
 
-struct os_entry_quad { // ID: 0x2
-    struct vector2 points[4];
+struct os_draw_quad { // ID: 0x2
+    float points[8];
     uint32_t colors[4]; // BGRA
-    uint32_t unknown[2];
+    uint32_t padding[2];
 };
 
-struct os_entry_line { // ID: 0x3
+struct os_draw_line { // ID: 0x3
     struct vector2 start;
     struct vector2 end;
     uint32_t color; // BGRA 
-    uint32_t unknown[9]; // All 0s?
+    uint32_t padding[9]; // All 0s?
 };
 
-struct os_entry_sprite { // Sprite
-    float x;
-    float y;
-    float w;
-    float h;
-    float x2;
-    float y2;
-    float w2;
-    float h2;
+struct os_draw_sprite { // ID: 0x4
+    struct vector2 start;
+    struct vector2 end;
+    struct vector2 start2;
+    struct vector2 end2;
     uint32_t color; // BGRA
     uint32_t id;
-    uint32_t unknown[4]; // All 0s?
+    uint32_t padding[4]; // All 0s?
 };
 
-struct os_entry_subdraw {
-    float x;
-    float y;
+struct os_draw_lines { // ID: 0x5
+    struct vector2 pos;
     uint32_t color;
-    float x2;
-    float y2;
+    uint32_t padding0;
+    float scale;
     uint32_t id;
-    uint32_t unknown[8];
+    uint32_t padding1[8];
 };
 
-struct os_entry_8 {
-    uint32_t value0; // Always 1?
-    uint32_t color; // Always 0x0000FFAA or 0xB900FFAA might be color? 
-    uint32_t unknown[12]; // All 0s?
-};
-
-struct os_entry_10 {
-    uint32_t value;
-    uint32_t colors[4];
-    uint32_t unknown[9];
-};
-
-struct os_entry_20 {
-    uint32_t value; // 1, 70
-    uint32_t unknown[13];
-};
-
-struct os_entry_40 {
-    uint32_t value;
-    float x; // Probably more floats after this
-    uint32_t unknown[12];
-};
-
-struct os_entry { // 64 bytes (16 x 4)
+struct os_draw { // 64 bytes (16 x 4)
     uint32_t type;
-    int32_t frame; // always 0xF, might be frame time? (-1 indicates unused)
+    int32_t anims;
     union {
-        struct os_entry_0 os0;
-        struct os_entry_text text; // 0x1
-        struct os_entry_quad quad; // 0x2
-        struct os_entry_line line; // 0x3
-        struct os_entry_sprite sprite; // 0x4
-        struct os_entry_subdraw subdraw; // 0x5
-        struct os_entry_8 os8;
-        struct os_entry_10 os10;
-        struct os_entry_20 os20;
-        struct os_entry_40 os40;
+        struct os_draw_text text; // 0x1
+        struct os_draw_quad quad; // 0x2
+        struct os_draw_line line; // 0x3
+        struct os_draw_sprite sprite; // 0x4
+        struct os_draw_lines lines; // 0x5
     };
 };
+
+struct os_anim_1 { // ID: 0x1
+    uint32_t padding[13];
+};
+
+struct os_anim_points { // ID: 0x2
+    float points[8];
+    uint32_t padding[5];
+};
+
+struct os_anim_rotate { // ID: 0x4
+    uint32_t padding0;
+    uint32_t flag;
+    uint32_t padding1[11];
+};
+
+struct os_anim_color { // ID: 0x8
+    uint32_t color; 
+    uint32_t padding[12]; // All 0s?
+};
+
+struct os_anim_colors { // ID: 0x10
+    uint32_t colors[4];
+    uint32_t padding[9];
+};
+
+struct os_anim_text { // ID: 0x20
+    uint32_t padding[13];
+};
+
+// This is only used on 0x5 draw_lines commands, scaling?
+struct os_anim_scale { // ID: 0x40
+    float scale;
+    uint32_t padding[12];
+};
+
+// No idea what this one does, but it doesn't have any params
+struct os_anim_80 { // ID: 0x80
+    uint32_t padding[13];
+};
+
+struct os_anim { // 64 bytes (16 x 4)
+    uint32_t type;
+    int32_t time;
+    int32_t duration;
+    union {
+        struct os_anim_1 anim1; // 0x1
+        struct os_anim_points points; // 0x2
+        struct os_anim_rotate rotate; // 0x4
+        struct os_anim_color color; // 0x8
+        struct os_anim_colors colors; // 0x10
+        struct os_anim_text text; // 0x20
+        struct os_anim_scale scale; // 0x40
+        struct os_anim_80 anim80; // 0x80
+    };
+};
+
+// OS animations play at 10fps instead of the typical 20fps
+const float original_fps = 10.0f;
 
 char * progname;
 char out_path[512];
@@ -489,9 +506,139 @@ int unpackCBT(char * path) {
     return 0;
 }
 
+void write_bgra(uint32_t bgra) {
+    jwArr_double((float)((bgra >> 16) & 0xFF) / (float)(0xFF)); // R
+    jwArr_double((float)((bgra >> 8) & 0xFF) / (float)(0xFF)); // G
+    jwArr_double((float)(bgra & 0xFF) / (float)(0xFF)); // B
+    jwArr_double((float)((bgra >> 24) & 0xFF) / (float)(0xFF)); // A
+}
+
+int write_os_draw(struct os_draw * draw) {
+    jwObj_int("type", draw->type);
+    switch (draw->type) {
+    case 0x0:
+        // NULL entry, ignore it
+    break;
+    case 0x1:
+        jwObj_double("x", draw->text.pos.x);
+        jwObj_double("y", draw->text.pos.y);
+        
+        jwObj_array("color");
+        write_bgra(draw->text.color);
+        jwEnd();
+        
+        jwObj_int("text", draw->text.id);
+        jwObj_int("arg", draw->text.arg);
+    break;
+    case 0x2:
+        jwObj_array("points");
+        for (int i = 0; i < 8; i++) {
+            jwArr_double(draw->quad.points[i]);
+        }
+        jwEnd();
+        
+        jwObj_array("colors");
+        for (int i = 0; i < 4; i++) {
+            jwArr_array();
+            write_bgra(draw->quad.colors[i]);
+            jwEnd();
+        }
+        jwEnd();
+    break;
+    case 0x3:
+        jwObj_double("x1", draw->line.start.x);
+        jwObj_double("y1", draw->line.start.y);
+        jwObj_double("x2", draw->line.end.x);
+        jwObj_double("y2", draw->line.end.y);
+        
+        jwObj_array("color");
+        write_bgra(draw->line.color);
+        jwEnd();
+    break;
+    case 0x4:
+        jwObj_int("sprite", draw->sprite.id);
+        jwObj_double("x1", draw->sprite.start.x);
+        jwObj_double("y1", draw->sprite.start.y);
+        jwObj_double("x2", draw->sprite.end.x);
+        jwObj_double("y2", draw->sprite.end.y);
+        
+        jwObj_array("color");
+        write_bgra(draw->sprite.color);
+        jwEnd();
+    break;
+    case 0x5:
+        jwObj_int("lines", draw->lines.id);
+        jwObj_double("x", draw->lines.pos.x);
+        jwObj_double("y", draw->lines.pos.y);
+        
+        jwObj_double("scale", draw->lines.scale);
+        
+        jwObj_array("color");
+        write_bgra(draw->lines.color);
+        jwEnd();
+    break;
+    default:
+        fprintf(stderr, "Unknown os_draw type %d\n", draw->type);
+        return 1;
+    }
+    
+    return 0;
+}
+
+int write_os_anim(struct os_anim * anim) {
+    jwObj_int("type", anim->type);
+    jwObj_double("time", (float)(anim->time) / original_fps);
+    jwObj_double("duration", (float)(anim->duration) / original_fps);
+    switch (anim->type) {
+    case 0x0:
+    case 0x1:
+    case 0x20:
+    case 0x80:
+        // NULL entries, ignore them
+    break;
+    case 0x2:
+        jwObj_array("points");
+        for (int i = 0; i < 8; i++) {
+            jwArr_double(anim->points.points[i]);
+        }
+        jwEnd();
+    break;
+    case 0x4:
+        jwObj_int("flag", anim->rotate.flag);
+    break;
+    case 0x8:
+        jwObj_array("color");
+        write_bgra(anim->color.color);
+        jwEnd();
+    break;
+    case 0x10:  
+        jwObj_array("colors");
+        for (int i = 0; i < 4; i++) {
+            jwArr_array();
+            write_bgra(anim->colors.colors[i]);
+            jwEnd();
+        }
+        jwEnd();
+    break;
+    case 0x40:
+        jwObj_double("scale", anim->scale.scale);
+    break;
+    default:
+        printf("Unknown os_anim type %d\n", anim->type);
+        return 1;
+    }
+    
+    return 0;
+}
+
 int unpackOS(char * path) {
-    if (sizeof(struct os_entry) != 64) {
-        fprintf(stderr, "OS Entry struct was %ld bytes not 64\n", sizeof(struct os_entry));
+    if (sizeof(struct os_draw) != 64) {
+        fprintf(stderr, "OS Draw struct was %ld bytes not 64\n", sizeof(struct os_draw));
+        return 1;
+    }
+    
+    if (sizeof(struct os_anim) != 64) {
+        fprintf(stderr, "OS Anim struct was %ld bytes not 64\n", sizeof(struct os_anim));
         return 1;
     }
     
@@ -504,43 +651,6 @@ int unpackOS(char * path) {
     char * ext = strrchr(path, separator);
     if (ext) ext[1] = '\0';
     else *path = '\0';
-    
-    strcpy(out_path, path);
-    strcat(out_path, "os.str");
-    FILE * text_file = fopen(out_path, "r");
-    if (!text_file) {
-        fprintf(stderr, "Failed to open os text file: %s\n", out_path);
-        fclose(os);
-        return 1;
-    }
-    
-    if (fgets(text_buffer, sizeof(text_buffer), text_file) == NULL) {
-        fprintf(stderr, "Failed to get text line count\n");
-        fclose(os);
-        fclose(text_file);
-        return 1;
-    }
-    
-    long text_lines = strtol(text_buffer, NULL, 10);
-    printf("Reading %ld lines of OS text\n", text_lines);
-    
-    char ** text = malloc(text_lines * sizeof(char *));
-    int text_offset = 0;
-    
-    for (int i = 0; i < text_lines; i++) {
-        text[i] = text_buffer + text_offset;
-        if (fgets(text[i], sizeof(text_buffer) - text_offset, text_file) == NULL) {
-            fprintf(stderr, "Failed to get line %d from OS strings\n", i);
-            fclose(os);
-            fclose(text_file);
-            return 1;
-        }
-        
-        text_offset += strlen(text[i]) - 1;
-        (text_buffer + text_offset)[-1] = '\0'; // Remove EOL character
-    }
-    
-    fclose(text_file);
     
     strcpy(out_path, path);
     strcat(out_path, ".data.hdr");
@@ -565,27 +675,82 @@ int unpackOS(char * path) {
         return 1;
     }
     
-    fseek(datf, 0x451B8, SEEK_SET);
-    struct os_subdraw_pointer subdraw_ptrs[38];
-    fread(subdraw_ptrs, sizeof(struct os_subdraw_pointer), 38, datf);
+    struct os_lines_pointer lines_ptrs[38];
+    const uint32_t lines_addrs[] = {0x33600, 0x33CB0, 0x34588}; // Sizes: 6, 7, 7
     
-    int subdraw_count = 0;
-    for (int i = 0; i < 38; i++) {
-        subdraw_count += subdraw_ptrs[i].count;
+    for (int i = 0; i < 3; i++) {
+        int lines_size = i ? 7 : 6;
+        fseek(datf, lines_addrs[i], SEEK_SET);
+        fread(lines_ptrs, sizeof(struct os_lines_pointer), lines_size, datf);
+        
+        jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+        
+        for (int j = 0; j < lines_size; j++) {
+            fseek(datf, lines_ptrs[j].offset - hdr_data.vaddr, SEEK_SET);
+            jwArr_array();
+            for (int k = 0; k < lines_ptrs[j].count * 4; k++) {
+                float val;
+                fread(&val, sizeof(float), 1, datf);
+                jwArr_double(val);
+            }
+            jwEnd();
+        }
+        
+        int jw_err = jwClose();
+        if (jw_err) {
+            fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+            fclose(os);
+            return 1;
+        }
+        
+        snprintf(out_path, sizeof(out_path), "%sos_unknown_%d.json", path, i);
+
+        FILE * outf = fopen(out_path, "w");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            return 1;
+        }
+        
+        fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+        fclose(outf);
     }
     
-    struct os_subdraw_line * subdraw[38];
-    struct os_subdraw_line * subdraw_data = malloc(subdraw_count * sizeof(struct os_subdraw_line));
+    fseek(datf, 0x451B8, SEEK_SET);
+    fread(lines_ptrs, sizeof(struct os_lines_pointer), 38, datf);
     
-    subdraw_count = 0;
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
     for (int i = 0; i < 38; i++) {
-        subdraw[i] = subdraw_data + subdraw_count;
-        fseek(datf, subdraw_ptrs[i].offset - hdr_data.vaddr, SEEK_SET);
-        fread(subdraw[i], sizeof(struct os_subdraw_line), subdraw_ptrs[i].count, datf);
-        subdraw_count += subdraw_ptrs[i].count;
+        fseek(datf, lines_ptrs[i].offset - hdr_data.vaddr, SEEK_SET);
+        jwArr_array();
+        for (int j = 0; j < lines_ptrs[i].count * 4; j++) {
+            float val;
+            fread(&val, sizeof(float), 1, datf);
+            jwArr_double(val);
+        }
+        jwEnd();
     }
     
     fclose(datf);
+    
+    int jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        fclose(os);
+        return 1;
+    }
+    
+    strcpy(out_path, path);
+    strcat(out_path, "os_lines.json");
+    
+    FILE * outf = fopen(out_path, "w");
+    if (!outf) {
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+    fclose(outf);
     
     uint32_t file_count;
     fread(&file_count, sizeof(uint32_t), 1, os);
@@ -598,188 +763,83 @@ int unpackOS(char * path) {
     for (int f = 0; f < file_count; f++) {
         fseek(os, files[f].offset, SEEK_SET);
         
-        if ((files[f].length - 4) % sizeof(struct os_entry)) {
+        if ((files[f].length - 4) % sizeof(struct os_draw)) {
             fprintf(stderr, "File length %d not evenly divisible by OS entry size %ld\n",
-                files[f].length - 4, sizeof(struct os_entry));
+                files[f].length - 4, sizeof(struct os_draw));
             fclose(os);
             return 1;
         }
         
-        snprintf(out_path, sizeof(out_path), "%sos_%02d.svg", path, f);
-        FILE * out = fopen(out_path, "w");
-        if (!out) {
-            fprintf(stderr, "Failed to open output file: %s\n", out_path);
-            fclose(out);
-            return 1;
-        }
+        jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
         
-        uint32_t entry_count;
-        fread(&entry_count, sizeof(uint32_t), 1, os);
+        uint32_t duration;
+        fread(&duration, sizeof(uint32_t), 1, os);
         
-        fprintf(out, "<svg version=\"1.1\" width=\"512\" height=\"512\" xmlns=\"http://www.w3.org/2000/svg\">\n");
-        fprintf(out, "<rect width=\"100%%\" height=\"100%%\" fill=\"black\"/>\n");
+        jwObj_double("duration", (float)(duration) / original_fps);
         
-        int os_count = (files[f].length - 4) / sizeof(struct os_entry);
-        for (int j = 0; j < os_count; j++) {
-            struct os_entry entry;
-            if (fread(&entry, sizeof(struct os_entry), 1, os) != 1) {
-                fprintf(stderr, "Failed to get entry %d from file %d\n", j, f);
+        jwObj_array("elements");
+        for (int i = 0; i < 112; i++) {
+            struct os_draw draw;
+            fseek(os, files[f].offset + 4 + sizeof(struct os_draw) * i, SEEK_SET);
+            if (fread(&draw, sizeof(struct os_draw), 1, os) != 1) {
+                fprintf(stderr, "Failed to get draw entry %d from file %d\n", i, f);
                 fclose(os);
                 return 1;
             }
             
-            if (entry.frame == -1) {
+            if (draw.anims < 0) {
                 continue;
             }
             
-            //long pos = ftell(os) - sizeof(struct os_entry);
-            //printf("Entry type 0x%02X at 0x%08lX, frame %d: ", entry.type, pos, entry.frame);
+            jwArr_object();
             
-            switch (entry.type) {
-            case 0x0:
-                for (int i = 0; i < 14; i++) {
-                    if (entry.os0.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
-                }
-            break;
-            case 0x1:
-                for (int i = 0; i < 9; i++) {
-                    if (entry.text.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
-                }
-                
-                if (entry.text.id >= text_lines) {
-                    printf("ERROR: Text ID %d >= text_lines %ld\n", entry.text.id, text_lines);
+            write_os_draw(&draw);
+            
+            fseek(os, files[f].offset + 4 + (sizeof(struct os_draw) * 112) + (sizeof(struct os_anim) * 16) * i, SEEK_SET);
+            
+            jwObj_array("anims");
+            int anim_count = draw.anims < 16 ? draw.anims : 16;   
+            for (int j = 0; j < anim_count; j++) {
+                struct os_anim anim;
+                if (fread(&anim, sizeof(struct os_anim), 1, os) != 1) {
+                    fprintf(stderr, "Failed to get animation entry %d:%d from file %d\n", i, j, f);
+                    fclose(os);
                     return 1;
                 }
                 
-                fprintf(out, "<text index=\"%d\" frame=\"%d\" x=\"%.0f\" y=\"%.0f\" color=\"%08X\" fill=\"#%06X\" arg=\"%d\">%s</text>\n",
-                    j, entry.frame,
-                    entry.text.pos.x, entry.text.pos.y,
-                    entry.text.color, entry.text.color & 0xFFFFFF,
-                    entry.text.arg, text[entry.text.id]);
-            break;
-            case 0x2:
-                if (entry.quad.unknown[0] || entry.quad.unknown[1]) {
-                    printf("unknown non-zero value\n");
-                    return 1;
-                }
-                fprintf(out, "<polygon index=\"%d\" frame=\"%d\" points=\"%.0f,%.0f %.0f,%.0f %.0f,%.0f %.0f,%.0f\" colors=\"%08X %08X %08X %08X\" fill=\"#%06X\"/>\n",
-                    j, entry.frame,
-                    entry.quad.points[0].x, entry.quad.points[0].y,
-                    entry.quad.points[1].x, entry.quad.points[1].y,
-                    entry.quad.points[2].x, entry.quad.points[2].y,
-                    entry.quad.points[3].x, entry.quad.points[3].y,
-                    entry.quad.colors[0],
-                    entry.quad.colors[1],
-                    entry.quad.colors[2],
-                    entry.quad.colors[3],
-                    entry.quad.colors[0]);
-            break;
-            case 0x3:
-                for (int i = 0; i < 9; i++) {
-                    if (entry.line.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
-                }
-                fprintf(out, "<line index=\"%d\" frame=\"%d\" x1=\"%.0f\" y1=\"%.0f\" x2=\"%.0f\" y2=\"%.0f\" color=\"%08X\" stroke=\"#%06X\"/>\n",
-                    j, entry.frame,
-                    entry.line.start.x, entry.line.start.y, entry.line.end.x, entry.line.end.y,
-                    entry.line.color, entry.line.color);
-            break;
-            case 0x4:
-                for (int i = 0; i < 4; i++) {
-                    if (entry.sprite.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
-                }
-                printf("(%.2fX %.2fY %.2fW %.2fH), (%.2fX %.2fY %.2fW %.2fH), color %08X, value %d\n",
-                    entry.sprite.x, entry.sprite.y, entry.sprite.w, entry.sprite.h,
-                    entry.sprite.x2, entry.sprite.y2, entry.sprite.w2, entry.sprite.h2,
-                    entry.sprite.color, entry.sprite.id);
-                
-            break;
-            case 0x5:
-                for (int i = 0; i < 8; i++) {
-                    if (entry.subdraw.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
+                if (!anim.type || anim.time < 0) {
+                    continue;
                 }
                 
-                uint32_t sd = entry.subdraw.id;
+                jwArr_object();
                 
-                if (sd >= 38) {
-                    fprintf(stderr, "Invalid subdraw ID %d\n", sd);
-                    return 1;
-                }
+                write_os_anim(&anim);
                 
-                fprintf(out, "<g index=\"%d\" frame=\"%d\" color=\"%08X\" stroke=\"#%06X\">\n",
-                    j, entry.frame, entry.subdraw.color, entry.subdraw.color);
-                for (int i = 0; i < subdraw_ptrs[sd].count; i++) {
-                    struct os_subdraw_line * line = subdraw[sd] + i;
-                    fprintf(out, "\t<line x1=\"%.0f\" y1=\"%.0f\" x2=\"%.0f\" y2=\"%.0f\"/>\n",
-                        entry.subdraw.x + line->start.x, entry.subdraw.y + line->start.y,
-                        entry.subdraw.x + line->end.x, entry.subdraw.y + line->end.y);
-                }
-                fprintf(out, "</g>\n");
-            break;
-            case 0x8:
-                for (int i = 0; i < 12; i++) {
-                    if (entry.os8.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
-                }
-                printf("%d, color %08X\n",
-                    entry.os8.value0, entry.os8.color);
-            break;
-            case 0x10:  
-                for (int i = 0; i < 9; i++) {
-                    if (entry.os10.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
-                }
-                printf("%d, colors (%08X %08X %08X %08X)\n",
-                    entry.os10.value, entry.os10.colors[0], entry.os10.colors[1], entry.os10.colors[2], entry.os10.colors[3]);
-            break;
-            case 0x20:
-                for (int i = 0; i < 13; i++) {
-                    if (entry.os20.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
-                }
-                printf("%d\n", entry.os20.value);
-            break;
-            case 0x40:
-                for (int i = 0; i < 10; i++) {
-                    if (entry.os40.unknown[i]) {
-                        printf("unknown non-zero value\n");
-                        return 1;
-                    }
-                }
-                printf("(%.2f), value %d\n", entry.os40.x, entry.os40.value);
-            break;
-            default:
-                printf("UNKNOWN ENTRY TYPE\n");
-                return 1;
+                jwEnd();
             }
+            jwEnd();
+            
+            jwEnd();
+        }
+        jwEnd();
+        
+        jw_err = jwClose();
+        if (jw_err) {
+            fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+            fclose(os);
+            return 1;
         }
         
-        fprintf(out, "</svg>\n");
-        fclose(out);
+        snprintf(out_path, sizeof(out_path), "%sos_%02d.json", path, f);
+        outf = fopen(out_path, "w");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            return 1;
+        }
+        
+        fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+        fclose(outf);
     }
-    
-    free(text);
-    free(subdraw_data);
     
     fclose(os);
     return 0;

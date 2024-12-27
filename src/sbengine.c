@@ -240,9 +240,10 @@ int export(char * path) {
         // Skip entries with invalid sizes
         if (file_sizes[i] != sizeof(struct engine_data)) {
             fprintf(stderr, "Skipped entry %d due to invalid file size: %d (expected %ld)\n",
-              i, file_sizes[i], sizeof(struct engine_data));
+                i, file_sizes[i], sizeof(struct engine_data));
+            fseek(engf, file_sizes[i], SEEK_CUR);
             continue;
-        }
+        } 
         
         struct engine_data engdat;
         fread(&engdat, sizeof(struct engine_data), 1, engf);
@@ -261,10 +262,10 @@ int export(char * path) {
         jwObj_double("weight", engdat.weight);
         jwObj_double("tier_r", engdat.tier_r);
         jwObj_double("gear_r", engdat.gears[0]);
-        for (int i = 1; i < 6; i++) {
+        for (int j = 1; j < 6; j++) {
             char name[16];
-            snprintf(name, sizeof(name), "gear_%d", i);
-            jwObj_double(name, engdat.gears[i]);
+            snprintf(name, sizeof(name), "gear_%d", j);
+            jwObj_double(name, engdat.gears[j]);
         }
         jwObj_double("gear_f", engdat.gear_f);
         jwObj_double("brake", engdat.brake);
@@ -412,7 +413,8 @@ int unpack(char * path) {
         // Skip entries with invalid sizes
         if (file_sizes[i] != sizeof(struct engine_data)) {
             fprintf(stderr, "Skipped entry %d due to invalid file size: %d (expected %ld)\n",
-              i, file_sizes[i], sizeof(struct engine_data));
+                i, file_sizes[i], sizeof(struct engine_data));
+            fseek(engf, file_sizes[i], SEEK_CUR);
             continue;
         }
         
@@ -453,6 +455,7 @@ int main(int argc, char ** argv) {
         case 'h':
             printf("%s", helpmsg);
             return 0;
+        case 'e':
     	case 'u':
     	case 'p':
     	    progmode = **argv;
