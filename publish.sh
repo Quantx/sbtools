@@ -18,6 +18,7 @@ done
 
 cp package.py sbtools/package.py
 cp export_presets.cfg sbtools/export_presets.cfg
+cp package.bat sbtools/DRAG_ONTO_ME.bat
 
 # Zip output directory
 rm sbtools.zip

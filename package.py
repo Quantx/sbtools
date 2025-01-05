@@ -4,8 +4,101 @@ import os
 import sys
 import subprocess
 import shutil
+import stat
+import platform
+import urllib.request
+from zipfile import ZipFile
+from io import BytesIO
 
-WINDOWS = os.name == 'nt'
+
+SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
+
+IS_WINDOWS = os.name == 'nt'
+
+DESIRED_GODOT = "4.3"
+
+GODOT_GITHUB_LINUX = {
+    "x86": "linux.x86_32",
+    "i386": "linux.x86_32",
+    
+    "x86_64": "linux.x86_64",
+    "AMD64": "linux.x86_64",
+}
+
+GODOT_GITHUB_WINDOWS = {
+    "x86": "win32.exe",
+    "i386": "win64.exe",
+    
+    "x86_64": "win32.exe",
+    "AMD64": "win64.exe",
+}
+
+GODOT_GITHUB_DL = "https://github.com/godotengine/godot/releases/download/{}-stable/Godot_v{}-stable_{}.zip"
+
+def check_godot_version(godot_path):
+    if not godot_path:
+        return False
+
+    res = subprocess.run([godot_path, "--version"], capture_output = True, text = True)
+    return res and res.stdout.startswith(DESIRED_GODOT + ".stable")
+
+def find_godot_dir(godot_dir_path):
+    for fname in os.listdir(SCRIPT_PATH):
+        froot, fext = os.path.splitext(fname.lower())
+        if "godot" not in froot or froot.endswith("console"):
+            continue
+    
+        if os.path.isfile(fname) and os.access(fname, os.X_OK):
+            fpath = os.path.join(SCRIPT_PATH, fname)
+            if check_godot_version(fpath):
+                return fpath
+    
+    return ""
+
+def get_godot():
+    # Check if Godot is already installed somewhere on this system
+    godot_path = shutil.which("godot")
+    if check_godot_version(godot_path):
+        return godot_path
+    
+    # Check if Godot is present in the local folder
+    godot_path = find_godot_dir(SCRIPT_PATH)
+    if godot_path:
+        return godot_path
+    
+    godot_type = ""
+    if IS_WINDOWS:
+        godot_type = GODOT_GITHUB_WINDOWS[platform.machine()]
+    else:
+        godot_type = GODOT_GITHUB_LINUX[platform.machine()]
+    
+    dl_url = GODOT_GITHUB_DL.format(DESIRED_GODOT, DESIRED_GODOT, godot_type)
+    
+    print("Downloading Godot from:", dl_url)
+    
+    with urllib.request.urlopen(dl_url) as resp:
+        godot_zip = ZipFile(BytesIO(resp.read()))
+        
+        for fname in godot_zip.namelist():
+            froot, fext = os.path.splitext(fname)
+            if froot.endswith("console"):
+                continue
+            
+            godot_zip.extract(fname, path=SCRIPT_PATH)
+            
+            if not IS_WINDOWS:
+                # Make this file executable on Linux
+                fpath = os.path.join(SCRIPT_PATH, fname)
+                st = os.stat(fpath)
+                os.chmod(fpath, st.st_mode | stat.S_IEXEC)
+    
+    # Recheck local path for godot
+    godot_path = find_godot_dir(SCRIPT_PATH)
+    if godot_path:
+        return godot_path
+    
+    print("Failed to download Godot")
+    return ""
 
 VT_ANIMS = {
     # Remember VT05 doesn't exist
@@ -52,7 +145,7 @@ VH_ANIMS = {
 }
 
 def tool_path(tool):
-    if WINDOWS:
+    if IS_WINDOWS:
         return os.path.join("windows", tool + ".exe")
     return os.path.join("linux", tool)
 
@@ -84,10 +177,19 @@ def hbx_to_gltf(hbxid):
 
     return outid
 
-def main(godot_path, root_path):
-    if not os.path.isfile(godot_path):
-        print("Could not locate Godot executable at path:", godot_path)
-        sys.exit(1)
+def main(root_path, godot_path):
+    if godot_path:
+        if not check_godot_version(godot_path):
+            print(f"Could not find desired Godot version {DESIRED_GODOT} at path specified:", godot_path)
+            return 1
+    else:
+        godot_path = get_godot()
+        if not godot_path:
+            return 1
+    
+    if not os.path.isfile(os.path.join(root_path, "default.xbe")):
+        print("Folder specified does not contain a 'default.xbe': ", root_path)
+        return 1
 
     BIN_PATHS = {}
     for b in ["ATARI", "MODEL", "MOTION", "TEXTURE", "VTMODEL"]:
@@ -108,7 +210,7 @@ def main(godot_path, root_path):
     # Unpack the XBE
     XBE_PATH = os.path.join(root_path, "default")
     res = subprocess.run([tool_path("segment"), "-u", os.path.join(root_path, "default.xbe")])
-    if res.returncode != 0: sys.exit(1)
+    if res.returncode != 0: return 1
 
     # Move segXX files to stage data folder
     STAGE_PATH = os.path.join(root_path, "media", "StgData")
@@ -134,7 +236,7 @@ def main(godot_path, root_path):
     # Unpack bins
     for bin_name, bin_path in BIN_PATHS.items():
         res = subprocess.run([tool_path("binarize"), "-u", bin_path + ".bin"])
-        if res.returncode != 0: sys.exit(1)
+        if res.returncode != 0: return 1
 
     # Convert Textures
     for tex in os.listdir(BIN_PATHS["TEXTURE"]):
@@ -145,7 +247,7 @@ def main(godot_path, root_path):
             args = [tool_path("sbtexture"), "-d", tex_path]
 
             res = subprocess.run(args)
-            if res.returncode != 0: sys.exit(1)
+            if res.returncode != 0: return 1
 
     # Convert Models
     for model in os.listdir(BIN_PATHS["MODEL"]):
@@ -154,7 +256,7 @@ def main(godot_path, root_path):
         if ext == ".xbo":
             print("Converting model:", model_path)
             res = subprocess.run([tool_path("sbmodel"), model_path, "--flip"])
-            if res.returncode != 0: sys.exit(1)
+            if res.returncode != 0: return 1
 
     # Convert VT Models
     for model in os.listdir(BIN_PATHS["VTMODEL"]):
@@ -163,7 +265,7 @@ def main(godot_path, root_path):
         if ext == ".xbo":
             print("Converting model:", model_path)
             res = subprocess.run([tool_path("sbmodel"), model_path, "--flip"])
-            if res.returncode != 0: sys.exit(1)
+            if res.returncode != 0: return 1
 
     # Apply animations
     for i in range(0, 10, 1):
@@ -174,7 +276,7 @@ def main(godot_path, root_path):
         gltf_path = os.path.join(BIN_PATHS["MODEL"], f"{gltf:04}.gltf")
         print("Adding motion file:", lmt_path, "To glTF file:", gltf_path)
         res = subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path])
-        if res.returncode != 0: sys.exit(1)
+        if res.returncode != 0: return 1
 
     # Weapon Animations
     for i, gltf in enumerate([706, 710, 696, 698, 744, 746, 748, 756, 680]):
@@ -184,7 +286,7 @@ def main(godot_path, root_path):
         gltf_path = os.path.join(BIN_PATHS["MODEL"], f"{gltf:04}.gltf")
         print("Adding motion file:", lmt_path, "To glTF file:", gltf_path)
         res = subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path])
-        if res.returncode != 0: sys.exit(1)
+        if res.returncode != 0: return 1
     
     # VT Animations
     for lmt, vtl in VT_ANIMS.items():
@@ -198,7 +300,7 @@ def main(godot_path, root_path):
                 
                 print("Adding motion file:", lmt_path, "To glTF file:", gltf_path)
                 res = subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path, "--mirror"])
-                if res.returncode != 0: sys.exit(1)
+                if res.returncode != 0: return 1
     
     # VT Hatch Animations
     for lmt, vtl in VH_ANIMS.items():
@@ -212,7 +314,7 @@ def main(godot_path, root_path):
                 
                 print("Adding motion file:", lmt_path, "To glTF file:", gltf_path)
                 res = subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path])
-                if res.returncode != 0: sys.exit(1)
+                if res.returncode != 0: return 1
 
     # Cockpit Animations
     for r in [(90, 1237, 33), (123, 1271, 9), (132, 1281, 14), (146, 1296, 13), (159, 1310, 11), (170, 1322, 2)]:
@@ -245,7 +347,7 @@ def main(godot_path, root_path):
         
         print("Adding motion file:", lmt_path, "To glTF file:", gltf_path)
         ret = subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path])
-        if res.returncode != 0: sys.exit(1)
+        if res.returncode != 0: return 1
 
     # Convert Hitboxes
     for hbxid in range(0, 251):
@@ -259,7 +361,7 @@ def main(godot_path, root_path):
 
         print("Converting hitbox:", hbx_path)
         res = subprocess.run([tool_path("sbhitbox"), hbx_path, gltf_path])
-        if res.returncode != 0: sys.exit(1)
+        if res.returncode != 0: return 1
 
     # Convert Terrains
     for terr in os.listdir(TERRAIN_PATH):
@@ -268,15 +370,15 @@ def main(godot_path, root_path):
         if ext == ".gnd":
             print("Converting terrain:", terr_path)
             res = subprocess.run([tool_path("sbterrain"), "-u", terr_path])
-            if res.returncode != 0: sys.exit(1)
+            if res.returncode != 0: return 1
 
     # Convert sounds
     res = subprocess.run([tool_path("sbsound"), os.path.join(SOUND_PATH, "Bank.xsb")])
-    if res.returncode != 0: sys.exit(1)
+    if res.returncode != 0: return 1
 
     # Unpack effects
     res = subprocess.run([tool_path("sbeffect"), os.path.join(EFFECT_PATH, "effect.efp")])
-    if res.returncode != 0: sys.exit(1)
+    if res.returncode != 0: return 1
     
     # Convert effects
     for effect in os.listdir(EFFECT_PATH):
@@ -284,11 +386,11 @@ def main(godot_path, root_path):
         eff_path = os.path.join(EFFECT_PATH, effect)
         if ext in [".efe", ".seq", ".uv2"]:
             res = subprocess.run([tool_path("sbeffect"), eff_path])
-            if res.returncode != 0: sys.exit(1)
+            if res.returncode != 0: return 1
     
     # Extract engine effect data
     res = subprocess.run([tool_path("sbeffect"), os.path.join(XBE_PATH, ".data.seg")])
-    if res.returncode != 0: sys.exit(1)
+    if res.returncode != 0: return 1
 
     # Create build directory
     out_path = os.path.join("build", "proprietary", "loc")
@@ -304,7 +406,7 @@ def main(godot_path, root_path):
     
     # Extract strings
     res = subprocess.run([tool_path("sbtext"), os.path.join(XBE_PATH, ""), os.path.join(out_path, "strings.csv")])
-    if res.returncode != 0: sys.exit(1)
+    if res.returncode != 0: return 1
     
     # Copy all map data
     STAGE_PATH = os.path.join(root_path, "media", "StgData", "") # The Extra string forces a trailing slash
@@ -361,7 +463,7 @@ def main(godot_path, root_path):
             pass
             
         res = subprocess.run([tool_path("sbstage"), str(i), STAGE_PATH])
-        if res.returncode != 0: sys.exit(1)
+        if res.returncode != 0: return 1
 
         os.replace(os.path.join(STAGE_PATH, mapid + ".json"), os.path.join(mission_path, "config.json"))
 
@@ -497,7 +599,7 @@ def main(godot_path, root_path):
     
     # Copy engine data
     res = subprocess.run([tool_path("sbengine"), "-e", os.path.join(ENGDATA_PATH, "eng_data.eng")])
-    if res.returncode != 0: sys.exit(1)
+    if res.returncode != 0: return 1
     os.replace(os.path.join(ENGDATA_PATH, "mechdata.json"), os.path.join(mech_base_path, "mechdata.json"))
     
     # Copy weapons
@@ -520,7 +622,7 @@ def main(godot_path, root_path):
     
     # Copy weapon data
     res = subprocess.run([tool_path("sbweapon"), os.path.join(WEAPDATA_PATH, "wepdat.wcb")])
-    if res.returncode != 0: sys.exit(1)
+    if res.returncode != 0: return 1
     os.replace(os.path.join(WEAPDATA_PATH, "weapondata.json"), os.path.join(weapon_path, "weapondata.json"))
     
     # Copy portraits
@@ -629,10 +731,15 @@ def main(godot_path, root_path):
     res = subprocess.run([godot_path, "--headless", "--path", "build", "--export-pack", "Proprietary", os.path.join("..", "Proprietary.pck")])
     if res.returncode != 0:
         print("Failed to build Godot package")
-        sys.exit(1)
+        return 1
+    
+    print("Finished building Godot package")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("usage: ./package.py <path_to_godot> <path_to_game_directory>")
+    if len(sys.argv) < 2:
+        print("usage: ./package.py <path_to_game_directory> [godot_path]")
         sys.exit(1)
-    main(sys.argv[1], sys.argv[2])
+    
+    godot_path = sys.argv[3] if len(sys.argv) >= 3 else ""
+    retCode = main(sys.argv[1], godot_path)
+    sys.exit(retCode)
