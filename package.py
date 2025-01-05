@@ -123,10 +123,6 @@ def main(godot_path, root_path):
     shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(ENGDATA_PATH, f".data.seg"))
     shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(ENGDATA_PATH, f".data.hdr"))
 
-    # Copy .data segment to cockpit folder
-    shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(COCKPIT_PATH, f".data.seg"))
-    shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(COCKPIT_PATH, f".data.hdr"))
-
     # Copy .data segment to Weapon folder
     shutil.copy(os.path.join(XBE_PATH, f".data.seg"), os.path.join(WEAPDATA_PATH, f".data.seg"))
     shutil.copy(os.path.join(XBE_PATH, f".data.hdr"), os.path.join(WEAPDATA_PATH, f".data.hdr"))
@@ -237,6 +233,8 @@ def main(godot_path, root_path):
     
     # Cockpit OS Animations
     subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "OS.os")])
+    subprocess.run([tool_path("sbcockpit"), os.path.join(XBE_PATH, ".data.seg")])
+    subprocess.run([tool_path("sbcockpit"), os.path.join(XBE_PATH, ".text.seg")])
 
     # Map Object Animations
     for i, gltf in enumerate([902, 906, 916, 928, 930, 932, 962]):
@@ -383,7 +381,6 @@ def main(godot_path, root_path):
     # Copy cockpits
     cockpit_base_path = os.path.join(out_path, "cockpit")
     cockpit_objs = [1238, 1256, 1271, 1284, 1298, 1310, 1322]
-    os_lookup = [0, 1, 2, 1, 0, 1]
     os_uvs = ["coko0", "coko1", "coko2", "cowm1", "coly0", "coak1"]
     for i, name in enumerate(["gen1", "gen2", "gen3", "jar", "gen1s", "gen2s"]):
         cockpit_path = os.path.join(cockpit_base_path, name)
@@ -397,6 +394,8 @@ def main(godot_path, root_path):
             texid = 5
         elif i == 5:
             texid = 3
+            
+        hudid = texid
 
         uitex = texid + 126
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{uitex:04}.dds"), os.path.join(cockpit_path, "ui.dds"))
@@ -426,6 +425,9 @@ def main(godot_path, root_path):
             shutil.copy(os.path.join(COCKPIT_PATH, f"BTLIG_{btId:02}.json"), os.path.join(cockpit_path, f"BTLIG_{j}.json"))
             shutil.copy(os.path.join(COCKPIT_PATH, f"BTAMB_{btId:02}.json"), os.path.join(cockpit_path, f"BTAMB_{j}.json"))
         
+        os.replace(os.path.join(XBE_PATH, f"hud_lines_{hudid}.json"), os.path.join(cockpit_path, "hud_lines.json"))
+        os.replace(os.path.join(XBE_PATH, f"hud_sprites_{hudid}.json"), os.path.join(cockpit_path, "hud_sprites.json"))
+        
         # Copy ambient and dynamic lights
         lig0 = i
         os.replace(os.path.join(COCKPIT_PATH, f"PLIG_{lig0:02}.json"), os.path.join(cockpit_path, "PLIG_0.json"))
@@ -435,30 +437,38 @@ def main(godot_path, root_path):
         os.replace(os.path.join(COCKPIT_PATH, f"PLIG_{lig1:02}.json"), os.path.join(cockpit_path, "PLIG_1.json"))
         os.replace(os.path.join(COCKPIT_PATH,  f"AMB_{lig1:02}.json"), os.path.join(cockpit_path, "AMB_1.json"))
         
-        # Copy OS files
-        osId = os_lookup[i] * 2
-        for j in range(6):
-            os0 = j * 6 + osId
-            os1 = j * 6 + osId + 1
-            
-            shutil.copy(os.path.join(COCKPIT_PATH, f"os_{os0:02}.json"), os.path.join(cockpit_path, f"os_{j}A.json"))
-            shutil.copy(os.path.join(COCKPIT_PATH, f"os_{os1:02}.json"), os.path.join(cockpit_path, f"os_{j}B.json"))
-        
         osUV = os_uvs[i]
         shutil.copy(os.path.join(COCKPIT_PATH, f"{osUV}uv.uv"), os.path.join(cockpit_path, "os_uv.data"))
     
     # Copy cockpit ejection bar
     os.replace(os.path.join(BIN_PATHS["MODEL"], "1323.gltf"),  os.path.join(cockpit_base_path, "1323.gltf"))
     os.replace(os.path.join(BIN_PATHS["MODEL"], "1323.glbin"), os.path.join(cockpit_base_path, "1323.glbin"))
-
-    # Copy cockpit strings
-    shutil.copy(os.path.join(COCKPIT_PATH, "os.str"), os.path.join(cockpit_base_path, "os.txt"))
     
-    # Copy cockpit OS line templates
-    os.replace(os.path.join(COCKPIT_PATH, "os_lines.json"), os.path.join(cockpit_base_path, "os_lines.json"))
-    os.replace(os.path.join(COCKPIT_PATH, "os_unknown_0.json"), os.path.join(cockpit_base_path, "os_unknown_0.json"))
-    os.replace(os.path.join(COCKPIT_PATH, "os_unknown_1.json"), os.path.join(cockpit_base_path, "os_unknown_1.json"))
-    os.replace(os.path.join(COCKPIT_PATH, "os_unknown_2.json"), os.path.join(cockpit_base_path, "os_unknown_2.json"))
+    # Copy OS data
+    os_base_path = os.path.join(cockpit_base_path, "os");
+    if not os.path.isdir(os_base_path):
+        os.makedirs(os_base_path)
+    
+    shutil.copy(os.path.join(COCKPIT_PATH, "os.str"), os.path.join(os_base_path, "strings.txt"))
+    os.replace(os.path.join(XBE_PATH, "os_lines.json"), os.path.join(os_base_path, "lines.json"))
+    os.replace(os.path.join(XBE_PATH, "ui_sprites.json"), os.path.join(cockpit_base_path, "ui_sprites.json"))
+    os.replace(os.path.join(XBE_PATH, "hud_colors.json"), os.path.join(cockpit_base_path, "hud_colors.json"))
+    
+    for i in range(0, 3):
+        os_gen = i + 1
+        os_path = os.path.join(os_base_path, f"gen{os_gen}")
+        if not os.path.isdir(os_path):
+            os.makedirs(os_path)
+        
+        os.replace(os.path.join(XBE_PATH, f"os_lines_{i}.json"), os.path.join(os_path, "lines.json"))
+        os.replace(os.path.join(XBE_PATH, f"os_data_{i}.json"), os.path.join(os_path, "data.json"))
+        os.replace(os.path.join(XBE_PATH, f"os_sprites_{i}.json"), os.path.join(os_path, "sprites.json"))
+        for j in range(6):
+            os0 = (j * 6) + (i * 2)
+            os1 = os0 + 1
+            
+            os.replace(os.path.join(COCKPIT_PATH, f"os_{os0:02}.json"), os.path.join(os_path, f"anim_{j}A.json"))
+            os.replace(os.path.join(COCKPIT_PATH, f"os_{os1:02}.json"), os.path.join(os_path, f"anim_{j}B.json"))
 
     # Copy VTs
     mech_base_path = os.path.join(out_path, "mechs")
@@ -572,11 +582,27 @@ def main(godot_path, root_path):
     os.replace(os.path.join(XBE_PATH, "lightdata.json"), os.path.join(effect_path, "lightdata.json"))
     
     # Copy effect data
+    effect_path_eff = os.path.join(effect_path, "eff")
+    if not os.path.isdir(effect_path_eff):
+        os.makedirs(effect_path_eff)
+    effect_path_spr = os.path.join(effect_path, "spr")
+    if not os.path.isdir(effect_path_spr):
+        os.makedirs(effect_path_spr)
+    effect_path_ui = os.path.join(effect_path, "ui")
+    if not os.path.isdir(effect_path_ui):
+        os.makedirs(effect_path_ui)
+    
     for effect in os.listdir(EFFECT_PATH):
-        _, ext = os.path.splitext(effect)
+        name, ext = os.path.splitext(effect)
         eff_path = os.path.join(EFFECT_PATH, effect)
         if ext == ".json":
-            os.replace(eff_path, os.path.join(effect_path, effect))
+            if name.startswith("eff"):
+                os.replace(eff_path, os.path.join(effect_path_eff, effect.removeprefix("eff")))
+            elif name.startswith("spr"):
+                os.replace(eff_path, os.path.join(effect_path_spr, effect.removeprefix("spr")))
+            elif name.startswith("ui"):
+                os.replace(eff_path, os.path.join(effect_path_ui, effect.removeprefix("ui")))
+            
     
     # Copy effect models
     for i in range(1216, 1236, 2):

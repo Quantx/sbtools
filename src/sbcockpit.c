@@ -89,6 +89,29 @@ struct os_lines_pointer {
     uint32_t offset;
 };
 
+struct os_sprite {
+    int32_t sprite_id;
+    struct vector2 pos;
+    struct vector2 size;
+    uint32_t color;
+};
+
+struct os_sprite2 {
+    int32_t ui_id;
+    int32_t sprite_id;
+    struct vector2 pos;
+    struct vector2 origin;
+    struct vector2 size;
+    float rotation;
+    float scale;
+    float a;
+    float b;
+    float c;
+    uint32_t color_ptr;
+    uint32_t d_ptr;
+    int32_t e;
+};
+
 struct os_draw_text {
     struct vector2 pos;
     uint32_t id;
@@ -652,106 +675,6 @@ int unpackOS(char * path) {
     if (ext) ext[1] = '\0';
     else *path = '\0';
     
-    strcpy(out_path, path);
-    strcat(out_path, ".data.hdr");
-    
-    FILE * hdrf = fopen(out_path, "rb");
-    if (!hdrf) {
-        fprintf(stderr, "Failed to open file: %s\n", out_path);
-        return 1;
-    }
-    
-    struct section_header hdr_data;
-    fread(&hdr_data, sizeof(struct section_header), 1, hdrf);
-    
-    fclose(hdrf);
-    
-    strcpy(out_path, path);
-    strcat(out_path, ".data.seg");
-    
-    FILE * datf = fopen(out_path, "rb");
-    if (!datf) {
-        fprintf(stderr, "Failed to open file: %s\n", out_path);
-        return 1;
-    }
-    
-    struct os_lines_pointer lines_ptrs[38];
-    const uint32_t lines_addrs[] = {0x33600, 0x33CB0, 0x34588}; // Sizes: 6, 7, 7
-    
-    for (int i = 0; i < 3; i++) {
-        int lines_size = i ? 7 : 6;
-        fseek(datf, lines_addrs[i], SEEK_SET);
-        fread(lines_ptrs, sizeof(struct os_lines_pointer), lines_size, datf);
-        
-        jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
-        
-        for (int j = 0; j < lines_size; j++) {
-            fseek(datf, lines_ptrs[j].offset - hdr_data.vaddr, SEEK_SET);
-            jwArr_array();
-            for (int k = 0; k < lines_ptrs[j].count * 4; k++) {
-                float val;
-                fread(&val, sizeof(float), 1, datf);
-                jwArr_double(val);
-            }
-            jwEnd();
-        }
-        
-        int jw_err = jwClose();
-        if (jw_err) {
-            fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
-            fclose(os);
-            return 1;
-        }
-        
-        snprintf(out_path, sizeof(out_path), "%sos_unknown_%d.json", path, i);
-
-        FILE * outf = fopen(out_path, "w");
-        if (!outf) {
-            fprintf(stderr, "Failed to open output file: %s\n", out_path);
-            return 1;
-        }
-        
-        fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
-        fclose(outf);
-    }
-    
-    fseek(datf, 0x451B8, SEEK_SET);
-    fread(lines_ptrs, sizeof(struct os_lines_pointer), 38, datf);
-    
-    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
-    
-    for (int i = 0; i < 38; i++) {
-        fseek(datf, lines_ptrs[i].offset - hdr_data.vaddr, SEEK_SET);
-        jwArr_array();
-        for (int j = 0; j < lines_ptrs[i].count * 4; j++) {
-            float val;
-            fread(&val, sizeof(float), 1, datf);
-            jwArr_double(val);
-        }
-        jwEnd();
-    }
-    
-    fclose(datf);
-    
-    int jw_err = jwClose();
-    if (jw_err) {
-        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
-        fclose(os);
-        return 1;
-    }
-    
-    strcpy(out_path, path);
-    strcat(out_path, "os_lines.json");
-    
-    FILE * outf = fopen(out_path, "w");
-    if (!outf) {
-        fprintf(stderr, "Failed to open output file: %s\n", out_path);
-        return 1;
-    }
-    
-    fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
-    fclose(outf);
-    
     uint32_t file_count;
     fread(&file_count, sizeof(uint32_t), 1, os);
     
@@ -823,7 +746,7 @@ int unpackOS(char * path) {
         }
         jwEnd();
         
-        jw_err = jwClose();
+        int jw_err = jwClose();
         if (jw_err) {
             fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
             fclose(os);
@@ -831,7 +754,7 @@ int unpackOS(char * path) {
         }
         
         snprintf(out_path, sizeof(out_path), "%sos_%02d.json", path, f);
-        outf = fopen(out_path, "w");
+        FILE * outf = fopen(out_path, "w");
         if (!outf) {
             fprintf(stderr, "Failed to open output file: %s\n", out_path);
             return 1;
@@ -842,6 +765,486 @@ int unpackOS(char * path) {
     }
     
     fclose(os);
+    return 0;
+}
+
+int write_os_sprite2(struct os_sprite2 * sprite) {
+    jwObj_int("ui", sprite->ui_id);
+    jwObj_int("sprite", sprite->sprite_id);
+    jwObj_double("x", sprite->pos.x);
+    jwObj_double("y", sprite->pos.y);
+    jwObj_double("origin_x", sprite->origin.x);
+    jwObj_double("origin_y", sprite->origin.y);
+    jwObj_double("w", sprite->size.x);
+    jwObj_double("h", sprite->size.y);
+    jwObj_double("rotation", sprite->rotation);
+    jwObj_double("scale", sprite->scale);
+    jwObj_double("a", sprite->a);
+    jwObj_double("b", sprite->b);
+    jwObj_double("c", sprite->c);
+    
+    jwObj_int("color_ptr", sprite->color_ptr);
+    jwObj_int("d_ptr", sprite->d_ptr);
+    
+    jwObj_int("e", sprite->e);
+
+    return 0;
+}
+
+int unpackDATA(char * path) {
+    FILE * datf = fopen(path, "rb");
+    if (!datf) {
+        fprintf(stderr, "Failed to open file: %s\n", path);
+        return 1;
+    }
+    
+    char * ext = strrchr(path, separator);
+    if (ext) ext[1] = '\0';
+    else *path = '\0';
+    
+    strcpy(out_path, path);
+    strcat(out_path, ".data.hdr");
+    
+    FILE * hdrf = fopen(out_path, "rb");
+    if (!hdrf) {
+        fprintf(stderr, "Failed to open file: %s\n", out_path);
+        return 1;
+    }
+    
+    struct section_header hdr_data;
+    fread(&hdr_data, sizeof(struct section_header), 1, hdrf);
+    
+    fclose(hdrf);
+    
+    printf("Unpacking OS lines from .data segment\n");
+    
+    struct os_lines_pointer lines_ptrs[38];
+    const uint32_t lines_addrs[] = {0x33600, 0x33CB0, 0x34588}; // Sizes: 6, 7, 7
+    
+    for (int i = 0; i < 3; i++) {
+        int lines_size = i ? 7 : 6;
+        fseek(datf, lines_addrs[i], SEEK_SET);
+        fread(lines_ptrs, sizeof(struct os_lines_pointer), lines_size, datf);
+        
+        jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+        
+        for (int j = 0; j < lines_size; j++) {
+            fseek(datf, lines_ptrs[j].offset - hdr_data.vaddr, SEEK_SET);
+            jwArr_array();
+            for (int k = 0; k < lines_ptrs[j].count * 4; k++) {
+                float val;
+                fread(&val, sizeof(float), 1, datf);
+                jwArr_double(val);
+            }
+            jwEnd();
+        }
+        
+        int jw_err = jwClose();
+        if (jw_err) {
+            fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+            fclose(datf);
+            return 1;
+        }
+        
+        snprintf(out_path, sizeof(out_path), "%sos_lines_%d.json", path, i);
+
+        FILE * outf = fopen(out_path, "w");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            return 1;
+        }
+        
+        fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+        fclose(outf);
+    }
+    
+    fseek(datf, 0x451B8, SEEK_SET);
+    fread(lines_ptrs, sizeof(struct os_lines_pointer), 38, datf);
+    
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
+    for (int i = 0; i < 38; i++) {
+        fseek(datf, lines_ptrs[i].offset - hdr_data.vaddr, SEEK_SET);
+        jwArr_array();
+        for (int j = 0; j < lines_ptrs[i].count * 4; j++) {
+            float val;
+            fread(&val, sizeof(float), 1, datf);
+            jwArr_double(val);
+        }
+        jwEnd();
+    }
+    
+    int jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        return 1;
+    }
+    
+    strcpy(out_path, path);
+    strcat(out_path, "os_lines.json");
+    
+    FILE * outf = fopen(out_path, "w");
+    if (!outf) {
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+    fclose(outf);
+    
+    printf("Unpacking HUD lines from .data segment\n");
+    
+    for (int c = 0; c < 6; c++) {
+        jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
+        for (int i = 0; i < 74; i++) {
+            fseek(datf, 0x2D5F0 + sizeof(struct os_lines_pointer) * (c * 74 + i), SEEK_SET);
+            struct os_lines_pointer lines_ptr;
+            fread(&lines_ptr, sizeof(struct os_lines_pointer), 1, datf);
+            
+            fseek(datf, lines_ptr.offset - hdr_data.vaddr, SEEK_SET);
+            
+            jwArr_array();
+            for (int j = 0; j < lines_ptr.count * 4; j++) {
+                float val;
+                fread(&val, sizeof(float), 1, datf);
+                jwArr_double(val);
+            }
+            jwEnd();
+        }
+        
+        int jw_err = jwClose();
+        if (jw_err) {
+            fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+            fclose(datf);
+            return 1;
+        }
+        
+        snprintf(out_path, sizeof(out_path), "%shud_lines_%d.json", path, c);
+
+        FILE * outf = fopen(out_path, "w");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            return 1;
+        }
+        
+        fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+        fclose(outf);
+    }
+    
+    printf("Unpacking OS sprites from .data segment\n");
+    
+    struct os_sprite2 os_sprites[30];
+    
+    uint32_t os_sprites_addrs[] = {0x37310, 0x376D0, 0x37AD0};
+    
+    for (int gen = 0; gen < 3; gen++) {
+        fseek(datf, os_sprites_addrs[gen], SEEK_SET);
+    
+        int32_t os_sprites_count = gen == 1 ? 16 : 15;
+        fread(os_sprites, sizeof(struct os_sprite2), os_sprites_count, datf);
+        
+        jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+        
+        for (int i = 0; i < os_sprites_count; i++) {
+            jwArr_object();
+            
+            write_os_sprite2(os_sprites + i);
+            
+            jwEnd();
+        }
+        
+        jw_err = jwClose();
+        if (jw_err) {
+            fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+            return 1;
+        }
+        
+        snprintf(out_path, sizeof(out_path), "%sos_sprites_%d.json", path, gen);
+        
+        FILE * outf = fopen(out_path, "w");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            return 1;
+        }
+        
+        fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+        fclose(outf);
+    }
+    
+    printf("Unpacking HUD sprites from .data segment\n");
+    
+    for (int c = 0; c < 6; c++) {
+        fseek(datf, 0x2E980 + sizeof(struct os_sprite2) * 30 * c, SEEK_SET);
+        fread(os_sprites, sizeof(struct os_sprite2), 30, datf);
+        
+        jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+        
+        for (int i = 0; i < 30; i++) {
+            jwArr_object();
+            
+            write_os_sprite2(os_sprites + i);
+            
+            jwEnd();
+        }
+        
+        jw_err = jwClose();
+        if (jw_err) {
+            fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+            return 1;
+        }
+        
+        snprintf(out_path, sizeof(out_path), "%shud_sprites_%d.json", path, c);
+        
+        FILE * outf = fopen(out_path, "w");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            return 1;
+        }
+        
+        fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+        fclose(outf);
+    }
+    
+    printf("Unpacking UI sprites from .data segment\n");
+    
+    struct file_entry ui_sprite_ptrs[8] = {
+        {0x2E760, 8}, // Multi-monitor status sprites
+        {0x2E908, 5}, // Multi-monitor systems sprites
+        {0x2E700, 4}, // Multi-monitor small-map sprites
+        {0x2E4C0, 24}, // Multi-monitor full-map sprites
+        
+        {0x2E8A8, 3}, // BR match status sprites
+        {0x2E830, 5}, // CQ match status sprites
+        {0x321B8, 28}, // Menu map (grid marker) sprites
+        {0x32184, 2} // Faction flag sprites (not sure where this is used?)
+    };
+    
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
+    for (int i = 0; i < 8; i++) {
+        fseek(datf, ui_sprite_ptrs[i].offset, SEEK_SET);
+        
+        jwArr_array();
+        for (int j = 0; j < ui_sprite_ptrs[i].length; j++) {
+            struct os_sprite sprite;
+            fread(&sprite, sizeof(struct os_sprite), 1, datf);
+            
+            jwArr_object();
+            
+            jwObj_int("sprite", sprite.sprite_id);
+            jwObj_double("x", sprite.pos.x);
+            jwObj_double("y", sprite.pos.y);
+            jwObj_double("w", sprite.size.x);
+            jwObj_double("h", sprite.size.y);
+            jwObj_array("color");
+            write_bgra(sprite.color);
+            jwEnd();
+            
+            jwEnd();
+        }
+        jwEnd();
+    }
+    
+    jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        return 1;
+    }
+    
+    strcpy(out_path, path);
+    strcat(out_path, "ui_sprites.json");
+    
+    outf = fopen(out_path, "w");
+    if (!outf) {
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+    fclose(outf);
+    
+    fclose(datf);
+    return 0;
+}
+
+int unpackTEXT(char * path) {
+    FILE * txtf = fopen(path, "rb");
+    if (!txtf) {
+        fprintf(stderr, "Failed to open file: %s\n", out_path);
+        return 1;
+    }
+    
+    char * ext = strrchr(path, separator);
+    if (ext) ext[1] = '\0';
+    else *path = '\0';
+    
+    printf("Unpacking OS data from .text segment\n");
+    
+    // Data layout for this is fucked. Piecemeal it together
+    fseek(txtf, 0x616CE, SEEK_SET);
+    
+    float switch_sprites[160];
+    for (int i = 0; i < 160; i++) {
+        if (i == 0x60) fseek(txtf, 0x61ADB, SEEK_SET);
+        fread(switch_sprites + i, sizeof(float), 1, txtf);
+        fseek(txtf, i >= 23 ? 7 : 4, SEEK_CUR);
+    }
+    
+    fseek(txtf, 0x61AA3, SEEK_SET);
+    
+    int switch_text_pos[30];
+    fread(switch_text_pos, sizeof(int32_t), 1, txtf);
+    switch_text_pos[2] = switch_text_pos[0];
+    switch_text_pos[4] = switch_text_pos[0];
+    switch_text_pos[6] = switch_text_pos[0];
+    switch_text_pos[8] = switch_text_pos[0];
+    
+    fseek(txtf, 0x61D9B, SEEK_SET);
+    for (int i = 1; i < 10; i += 2) {
+        fread(switch_text_pos + i, sizeof(int32_t), 1, txtf);
+        fseek(txtf, 7, SEEK_CUR);
+    }
+    
+    fseek(txtf, 0x61ACB, SEEK_SET);
+    fread(switch_text_pos + 10, sizeof(int32_t), 1, txtf);
+    
+    fseek(txtf, 0x61DD9, SEEK_SET);
+    fread(switch_text_pos + 11, sizeof(int32_t), 1, txtf);
+    
+    fseek(txtf, 0x61AD0, SEEK_SET);
+    fread(switch_text_pos + 12, sizeof(int32_t), 1, txtf);
+    
+    fseek(txtf, 0x61DEB, SEEK_SET);
+    fread(switch_text_pos + 13, sizeof(int32_t), 1, txtf);
+    
+    fseek(txtf, 0x61E16, SEEK_SET);
+    fread(switch_text_pos + 14, sizeof(int32_t), 1, txtf);
+    
+    fseek(txtf, 0x61E21, SEEK_SET);
+    fread(switch_text_pos + 15, sizeof(int32_t), 1, txtf);
+    
+    switch_text_pos[16] = switch_text_pos[10];
+    
+    fseek(txtf, 0x61DF7, SEEK_SET);
+    fread(switch_text_pos + 17, sizeof(int32_t), 1, txtf);
+    
+    switch_text_pos[18] = switch_text_pos[12];
+    switch_text_pos[20] = switch_text_pos[17];
+    
+    fseek(txtf, 0x61E33, SEEK_SET);
+    for (int i = 19; i < 30; i++) {
+        if (i == 20) continue;
+        fread(switch_text_pos + i, sizeof(int32_t), 1, txtf);
+        fseek(txtf, 7, SEEK_CUR);
+    }
+    
+    for (int gen = 0; gen < 3; gen++) {
+        jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
+        
+        fseek(txtf, 0x60788 + (8 * 10 * gen), SEEK_SET);
+        
+        jwObj_array("start_bar_pos");
+        for (int i = 0; i < 10; i++) {
+            float val;
+            fread(&val, sizeof(float), 1, txtf);
+            jwArr_double(val);
+            
+            // For whatever reason the instruction format changes for gen 2
+            fseek(txtf, gen == 2 ? 7 : 4, SEEK_CUR); // Skip instruction bytes
+        }
+        jwEnd();
+        
+        fseek(txtf, 0x6143D + (11 * 20 * gen), SEEK_SET);
+        
+        jwObj_array("switch_bar_pos");
+        for (int i = 0; i < 20; i++) {
+            float val;
+            fread(&val, sizeof(float), 1, txtf);
+            jwArr_double(val);
+            
+            fseek(txtf, 7, SEEK_CUR); // Skip instruction bytes
+        }
+        jwEnd();
+        
+        jwObj_array("switch_quads");
+        if (gen == 2) {
+            for (int i = 80; i < 160; i++) {
+                jwArr_double(switch_sprites[i]);
+            }
+        } else {
+            for (int i = 0; i < 40; i++) {
+                jwArr_double(switch_sprites[i + (40 * gen)]);
+            }
+        }
+        jwEnd();
+        
+        jwObj_array("switch_text_pos");
+        for (int i = 0; i < 10; i++) {
+            jwArr_double(switch_text_pos[i + (10 * gen)]);
+        }
+        jwEnd();
+        
+        int jw_err = jwClose();
+        if (jw_err) {
+            fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+            fclose(txtf);
+            return 1;
+        }
+        
+        snprintf(out_path, sizeof(out_path), "%sos_data_%d.json", path, gen);
+
+        FILE * outf = fopen(out_path, "w");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", out_path);
+            fclose(txtf);
+            return 1;
+        }
+        
+        fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+        fclose(outf);
+    }
+    
+    printf("Unpacking HUD colors from .text segment\n");
+    
+    uint32_t color_addrs[] = {0x27B5A, 0x27B91, 0x27BC8, 0x27BFC, 0x27C30};
+    
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
+    for (int i = 0; i < 5; i++) {
+        fseek(txtf, color_addrs[i], SEEK_SET);
+        
+        jwArr_array();
+        for (int j = 0; j < 5; j++) {
+            uint32_t color;
+            fread(&color, sizeof(uint32_t), 1, txtf);
+            jwArr_array();
+            write_bgra(color);
+            jwEnd();
+            fseek(txtf, 6, SEEK_CUR);
+        }
+        jwEnd();
+    }
+    
+    int jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        return 1;
+    }
+    
+    strcpy(out_path, path);
+    strcat(out_path, "hud_colors.json");
+    
+    FILE * outf = fopen(out_path, "w");
+    if (!outf) {
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+    fclose(outf);
+    
+    fclose(txtf);
     return 0;
 }
 
@@ -868,7 +1271,18 @@ int main(int argc, char ** argv) {
     else if (!strcmp(ext, "amb")) return unpackAMB(path);
     else if (!strcmp(ext, "cbt")) return unpackCBT(path);
     else if (!strcmp(ext, "os")) return unpackOS(path);
-    else {
+    else if (!strcmp(ext, "seg")) {
+        char * sep = strrchr(path, separator);
+        if (sep) sep++;
+        else sep = path;
+        
+        if (!strncmp(sep, ".data.", 6)) return unpackDATA(path);
+        else if (!strncmp(sep, ".text.", 6)) return unpackTEXT(path);
+        else {
+            fprintf(stderr, "Unknown segment file: %s\n", sep);
+            return 1;
+        }
+    } else {
         fprintf(stderr, "Unknown file extension: %s\n", path);
         return 1;
     }
