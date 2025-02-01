@@ -467,6 +467,12 @@ def main(root_path, godot_path):
 
         os.replace(os.path.join(STAGE_PATH, mapid + ".json"), os.path.join(mission_path, "config.json"))
 
+    # Copy map terrain factors
+    res = subprocess.run([tool_path("sbstage"), "data", STAGE_PATH])
+    if res.returncode != 0: return 1
+    
+    os.replace(os.path.join(STAGE_PATH, "terrain_resistances.data"), os.path.join(out_path, "maps", "terrain_resistances.data"))
+
     # Copy map objects
     mapobj_path = os.path.join(out_path, "objects")
     if not os.path.isdir(mapobj_path):

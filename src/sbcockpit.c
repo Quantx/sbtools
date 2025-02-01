@@ -1209,8 +1209,28 @@ int unpackTEXT(char * path) {
     
     uint32_t color_addrs[] = {0x27B5A, 0x27B91, 0x27BC8, 0x27BFC, 0x27C30};
     
-    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
     
+    jwObj_array("pointers");
+    fseek(txtf, 0x27B56, SEEK_SET);
+    for (int i = 0; i < 5; i++) {
+        uint32_t ptr;
+        fread(&ptr, sizeof(uint32_t), 1, txtf);
+        jwArr_int(ptr);
+        printf("Pointer: %08X\n", ptr);
+        
+        fseek(txtf, 6, SEEK_CUR);
+    }
+    fseek(txtf, 0x27C8E, SEEK_SET);
+    {
+        uint32_t ptr;
+        fread(&ptr, sizeof(uint32_t), 1, txtf);
+        jwArr_int(ptr);
+        printf("Pointer: %08X\n", ptr);
+    }
+    jwEnd();
+    
+    jwObj_array("palettes");
     for (int i = 0; i < 5; i++) {
         fseek(txtf, color_addrs[i], SEEK_SET);
         
@@ -1225,6 +1245,7 @@ int unpackTEXT(char * path) {
         }
         jwEnd();
     }
+    jwEnd();
     
     int jw_err = jwClose();
     if (jw_err) {

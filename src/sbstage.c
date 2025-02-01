@@ -6,10 +6,39 @@
 
 #include "jWrite.h"
 
+struct vector3 {
+    float x, y, z;
+} __attribute__((packed));
+
+struct stage_object {
+    int16_t life;
+    int16_t id;
+    int16_t motion;
+    int16_t attr0;
+    int16_t attr1;
+    int16_t attr2;
+    struct vector3 pos;
+    struct vector3 dir;
+    int8_t attr3;
+    int8_t attr4;
+    int16_t attr5;
+    int8_t team_id;
+    int8_t ticket_value;
+    int16_t attr6;
+    uint32_t flags;
+    uint8_t padding[48];
+} __attribute__((packed));
+
 char * progname;
 char * basepath;
 char path[256];
 char json_buffer[1<<20]; // 1MB
+
+void emit_vector3(struct vector3 * v3) {
+    jwArr_double(v3->x);
+    jwArr_double(v3->y);
+    jwArr_double(v3->z);
+}
 
 void emit_float_array(float * vals, size_t len) {
     for (size_t i = 0; i < len; i++) {
@@ -37,10 +66,10 @@ int unpackRST(long map) {
     jwObj_array("rstart");
     
     for (int i = 0; i < 10; i++) {
-        float pos[3];
-        fread(pos, sizeof(float), 3, rstf);
-        float dir[3];
-        fread(dir, sizeof(float), 3, rstf);
+        struct vector3 pos;
+        fread(&pos, sizeof(struct vector3), 1, rstf);
+        struct vector3 dir;
+        fread(&dir, sizeof(struct vector3), 1, rstf);
         
         uint32_t unknown;
         fread(&unknown, sizeof(uint32_t), 1, rstf);
@@ -56,11 +85,11 @@ int unpackRST(long map) {
 
         jwArr_object();
             jwObj_array("position");
-            emit_float_array(pos, 3);
+            emit_vector3(&pos);
             jwEnd();
 
             jwObj_array("rotation");
-            emit_float_array(dir, 3);
+            emit_vector3(&dir);
             jwEnd();
         jwEnd();
     }
@@ -72,6 +101,11 @@ int unpackRST(long map) {
 }
     
 int unpackSEG(long map) {
+    if (sizeof(struct stage_object) != 96) {
+        fprintf(stderr, "stage_object was not 96 bytes\n");
+        return 1;
+    }
+
     snprintf(path, sizeof(path), "%sseg%02ld.seg", basepath, map);
     FILE * segf = fopen(path, "rb");
     if (!segf) {
@@ -89,60 +123,40 @@ int unpackSEG(long map) {
     
     int obj_count;
     for (obj_count = 0; 1; obj_count++) {
-        int16_t obj_arg;
-        fread(&obj_arg, sizeof(int16_t), 1, segf);
-        int16_t obj_id;
-        fread(&obj_id, sizeof(uint16_t), 1, segf);
+        struct stage_object obj;
+        fread(&obj, sizeof(struct stage_object), 1, segf);
         
-        if (obj_id == -1) break;
-        
-        int16_t attr0[4];
-        fread(attr0, sizeof(int16_t), 4, segf);
-        
-        float pos[3];
-        fread(pos, sizeof(float), 3, segf);
-        
-        float dir[3];
-        fread(dir, sizeof(float), 3, segf);
-        
-        int16_t attr1[4];
-        fread(attr1, sizeof(int16_t), 4, segf);        
-        
-        uint32_t attr2;
-        fread(&attr2, sizeof(int32_t), 1, segf);
-        
-        for (int i = 0; i < 48; i++) {
-            uint8_t pad;
-            fread(&pad, sizeof(int8_t), 1, segf);
-            
-            if (pad) {
-                fprintf(stderr, "Pad at %d was %02X\n", i, pad);
-                return 1;
-            }
-        }
+        if (obj.id == -1) break;
 
         jwArr_object();
         
-        jwObj_int("id", obj_id);
-        jwObj_int("arg", obj_arg);
-
+        jwObj_int("id", obj.id);
+        jwObj_int("life", obj.life);
+        
+        jwObj_int("motion", obj.motion);
+        
+        jwObj_int("attr0", obj.attr1);
+        jwObj_int("attr1", obj.attr2);
+        jwObj_int("attr2", obj.attr3);
+        
         jwObj_array("position");
-        emit_float_array(pos, 3);
+        emit_vector3(&obj.pos);
         jwEnd();
     
         jwObj_array("rotation");
-        emit_float_array(dir, 3);
+        emit_vector3(&obj.dir);
         jwEnd();
         
-        jwObj_array("attr0");
-        for (int i = 0; i < 4; i++) jwArr_int(attr0[i]);
-        jwEnd();
+        jwObj_int("attr3", obj.attr1);
+        jwObj_int("attr4", obj.attr2);
+        jwObj_int("attr5", obj.attr3);
         
-        jwObj_array("attr1");
-        for (int i = 0; i < 4; i++) jwArr_int(attr1[i]);
-        jwEnd();
+        jwObj_int("team_id", obj.team_id);
+        jwObj_int("ticket_value", obj.ticket_value);
         
-        jwObj_int("attr2", attr2);
+        jwObj_int("attr6", obj.attr4);
+        
+        jwObj_int("flags", obj.flags);
         
         jwEnd();
     }
@@ -340,14 +354,19 @@ int main(int argc, char ** argv) {
         return 1;
     }
     
-    long map = strtoul(*argv, NULL, 10);
+    long map;
+    if (!strcmp(*argv, "data")) {
+        map = -1;
+    } else {
+        map = strtol(*argv, NULL, 10);
+        if (map < 0 || map > 26) {
+            fprintf(stderr, "Invalid map number %ld, should be between 0 and 26\n", map);
+            return 1;
+        }
+    }
+    
     argv++; argc--;
     
-    if (map < 0 || map > 26) {
-        fprintf(stderr, "Invalid map number %ld, should be between 0 and 26\n", map);
-        return 1;
-    }
-
     if (argc) {
         basepath = *argv++; argc--;
     } else {
@@ -359,6 +378,27 @@ int main(int argc, char ** argv) {
     if (!datf) {
         fprintf(stderr, "Failed to open .data.seg, ensure you've copied it after running: segment -u default.xbe\n");
         return 1;
+    }
+    
+    if (map < 0) {
+        printf("Extracting 64 terrain factors\n");
+        float surfaceFactors[64];
+        fseek(datf, 0x55728, SEEK_SET);
+        fread(surfaceFactors, sizeof(float), 64, datf);
+        
+        fclose(datf);
+        
+        snprintf(path, sizeof(path), "%sterrain_resistances.data", basepath);
+        FILE * outf = fopen(path, "wb");
+        if (!outf) {
+            fprintf(stderr, "Failed to open output file: %s\n", path);
+            return 1;
+        }
+        
+        fwrite(surfaceFactors, sizeof(float), 64, outf);
+        
+        fclose(outf);
+        return 0;
     }
     
     int32_t missionIDs[27];

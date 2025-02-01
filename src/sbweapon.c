@@ -81,7 +81,7 @@ struct __attribute__((__packed__)) weapon_data {
     uint16_t volley_spread;
     float horizontal_muzzle_offset;
     float vertical_muzzle_offset;
-    float retraction;
+    float recoil;
     uint16_t damage_type;
     uint16_t firing_delay;
     uint8_t category; // Also called "trajectory"
@@ -295,7 +295,7 @@ int main(int argc, char ** argv) {
             jwObj_int("volley_spread", wep.volley_spread);
             jwObj_double("horizontal_muzzle_offset", wep.horizontal_muzzle_offset);
             jwObj_double("vertical_muzzle_offset", wep.vertical_muzzle_offset);
-            jwObj_double("retraction", wep.retraction);
+            jwObj_double("recoil", wep.recoil);
             jwObj_int("damage_type", wep.damage_type);
             jwObj_int("firing_delay", wep.firing_delay);
             jwObj_int("category", wep.category);
