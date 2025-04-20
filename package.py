@@ -7,7 +7,9 @@ import shutil
 import stat
 import platform
 import urllib.request
+import lzma
 from zipfile import ZipFile
+from tarfile import TarFile
 from io import BytesIO
 
 
@@ -43,13 +45,13 @@ def check_godot_version(godot_path):
     return res and res.stdout.startswith(DESIRED_GODOT + ".stable")
 
 def find_godot_dir(godot_dir_path):
-    for fname in os.listdir(SCRIPT_PATH):
+    for fname in os.listdir(godot_dir_path):
         froot, fext = os.path.splitext(fname.lower())
         if "godot" not in froot or froot.endswith("console"):
             continue
     
         if os.path.isfile(fname) and os.access(fname, os.X_OK):
-            fpath = os.path.join(SCRIPT_PATH, fname)
+            fpath = os.path.join(godot_dir_path, fname)
             if check_godot_version(fpath):
                 return fpath
     
@@ -98,6 +100,66 @@ def get_godot():
         return godot_path
     
     print("Failed to download Godot")
+    return ""
+
+FFMPEG_GITHUB_DL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-{}-gpl.{}"
+
+def find_ffmpeg_dir(ffmpeg_dir_path):
+    for fname in os.listdir(ffmpeg_dir_path):
+        froot, fext = os.path.splitext(fname.lower())
+        if froot != "ffmpeg":
+            continue
+    
+        if os.path.isfile(fname) and os.access(fname, os.X_OK):
+            return os.path.join(ffmpeg_dir_path, fname)
+    
+    return ""
+
+def get_ffmpeg():
+    # Check if FFMPEG is already installed somewhere on this system
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        return ffmpeg_path
+    
+    # Check if FFMPEG is present in the local folder
+    ffmpeg_path = find_ffmpeg_dir(SCRIPT_PATH)
+    if ffmpeg_path:
+        return ffmpeg_path
+    
+    os_type = "win64" if IS_WINDOWS else "linux64" 
+    ext_type = "zip"  if IS_WINDOWS else "tar.xz"
+    
+    dl_url = FFMPEG_GITHUB_DL.format(os_type, ext_type)
+    
+    print("Downloading FFMPEG from:", dl_url)
+    
+    with urllib.request.urlopen(dl_url) as resp:
+        if ext_type == "zip":
+            ffmpeg_zip = ZipFile(BytesIO(resp.read()))
+            for info in ffmpeg_zip.infolist():
+                froot, fext = os.path.splitext(info.filename)
+                if froot.endswith("ffmpeg") and fext == ".exe":
+                    info.filename = os.path.basename(info.filename) # Drop folder prefix
+                    ffmpeg_zip.extract(info, path=SCRIPT_PATH)
+                    break
+        elif ext_type == "tar.xz":
+            ffmpeg_tar = TarFile(fileobj=lzma.open(BytesIO(resp.read())))
+            for member in ffmpeg_tar.getmembers():
+                if not member.isreg():
+                    continue
+            
+                froot, fext = os.path.splitext(member.name)
+                if froot.endswith("/bin/ffmpeg"):
+                    member.name = os.path.basename(member.name) # Drop folder prefix
+                    ffmpeg_tar.extract(member, path=SCRIPT_PATH)
+                    break
+    
+    # Recheck local path for FFMPEG
+    ffmpeg_path = find_ffmpeg_dir(SCRIPT_PATH)
+    if ffmpeg_path:
+        return ffmpeg_path
+    
+    print("Failed to download FFMPEG")
     return ""
 
 VT_ANIMS = {
@@ -186,6 +248,10 @@ def main(root_path, godot_path):
         godot_path = get_godot()
         if not godot_path:
             return 1
+    
+    ffmpeg_path = get_ffmpeg()
+    if not ffmpeg_path:
+        return 1
     
     if not os.path.isfile(os.path.join(root_path, "default.xbe")):
         print("Folder specified does not contain a 'default.xbe': ", root_path)
@@ -375,6 +441,25 @@ def main(root_path, godot_path):
     # Convert sounds
     res = subprocess.run([tool_path("sbsound"), os.path.join(SOUND_PATH, "Bank.xsb")])
     if res.returncode != 0: return 1
+    
+    sound_dirs = [SOUND_PATH]
+    for bank in os.listdir(SOUND_PATH):
+        bank_path = os.path.join(SOUND_PATH, bank)
+        if os.path.isdir(bank_path):
+            sound_dirs.append(bank_path)
+
+    for sound_dir in sound_dirs:
+        for sound in os.listdir(sound_dir):
+            sound_path = os.path.join(sound_dir, sound)
+            if not os.path.isfile(sound_path):
+                continue
+            
+            sound_ogg, ext = os.path.splitext(sound_path)
+            sound_ogg += ".ogg"
+            if ext == ".wav" or ext == ".wma":
+                print("Converting sound:", sound_path)
+                res = subprocess.run([ffmpeg_path, "-y", "-i", sound_path, "-acodec", "libvorbis", sound_ogg])
+                if res.returncode != 0: return 1
 
     # Unpack effects
     res = subprocess.run([tool_path("sbeffect"), os.path.join(EFFECT_PATH, "effect.efp")])
@@ -396,6 +481,7 @@ def main(root_path, godot_path):
     out_path = os.path.join("build", "proprietary", "loc")
     if not os.path.isdir(out_path):
         os.makedirs(out_path)
+    
     
     # Copy Godot data
     godot_presets = "export_presets.cfg"
@@ -735,6 +821,30 @@ def main(root_path, godot_path):
     for i in range(0, 10, 1):
         emblem = i + 328
         os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{emblem:04}.dds"), os.path.join(emblem_path, f"{i}.dds"))
+
+    # Copy Sounds
+    sound_base_path = os.path.join(out_path, "sounds")
+    for sound_dir in sound_dirs:
+        bank = os.path.basename(sound_dir)
+    
+        sound_bank_path = sound_base_path
+        if not bank.endswith("sndeff"):
+            sound_bank_path = os.path.join(sound_base_path, bank)
+        
+        if not os.path.isdir(sound_bank_path):
+            os.makedirs(sound_bank_path)
+        
+        for sound in os.listdir(sound_dir):
+            ogg_path = os.path.join(sound_dir, sound)
+            if not os.path.isfile(ogg_path):
+                continue
+            
+            _, ext = os.path.splitext(ogg_path)
+            if ext == ".ogg":
+                os.replace(ogg_path, os.path.join(sound_bank_path, sound))
+    
+    # Copy Sound Cue file
+    os.replace(os.path.join(SOUND_PATH, "cues.json"), os.path.join(sound_base_path, "cues.json"))
 
     # Build Godot package
     res = subprocess.run([godot_path, "--headless", "--path", "build", "--export-pack", "Proprietary", os.path.join("..", "Proprietary.pck")])
