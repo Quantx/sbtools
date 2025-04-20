@@ -84,6 +84,10 @@ struct vector2 {
     float x, y;
 };
 
+struct vector3 {
+    float x, y, z;
+};
+
 struct os_lines_pointer {
     uint32_t count;
     uint32_t offset;
@@ -1054,6 +1058,56 @@ int unpackDATA(char * path) {
     
     strcpy(out_path, path);
     strcat(out_path, "ui_sprites.json");
+    
+    outf = fopen(out_path, "w");
+    if (!outf) {
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+    fclose(outf);
+    
+    printf("Extracting pilot camera poses\n");
+    
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
+    fseek(datf, 0x105D0, SEEK_SET);
+    
+    for (int c = 0; c < 6; c++) {
+        jwArr_array();
+        for (int i = 0; i < 7; i++) {
+            jwArr_object();
+            
+            struct vector3 pos, dir;
+            fread(&pos, sizeof(struct vector3), 1, datf);
+            fread(&dir, sizeof(struct vector3), 1, datf);
+            
+            jwObj_array("position");
+            jwArr_double(pos.x);
+            jwArr_double(pos.y);
+            jwArr_double(pos.z);
+            jwEnd();
+            
+            jwObj_array("rotation");
+            jwArr_double(dir.x);
+            jwArr_double(dir.y);
+            jwArr_double(dir.z);
+            jwEnd();
+            
+            jwEnd();
+        }
+        jwEnd();
+    }
+    
+    jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        return 1;
+    }
+    
+    strcpy(out_path, path);
+    strcat(out_path, "pilot_poses.json");
     
     outf = fopen(out_path, "w");
     if (!outf) {

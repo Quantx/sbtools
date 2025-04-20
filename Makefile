@@ -29,7 +29,7 @@ $(ODIR)/sbhitbox $(ODIR)/sbhitbox.exe: $(SDIR)/sbhitbox.c
 $(ODIR)/sbmodel $(ODIR)/sbmodel.exe: $(SDIR)/sbmodel.c
 $(ODIR)/sbmotion $(ODIR)/sbmotion.exe: $(SDIR)/sbmotion.c
 $(ODIR)/sbshader $(ODIR)/sbshader.exe: $(SDIR)/sbshader.c
-$(ODIR)/sbsound $(ODIR)/sbsound.exe: $(SDIR)/sbsound.c
+$(ODIR)/sbsound $(ODIR)/sbsound.exe: $(SDIR)/sbsound.c $(LDIR)/jWrite.c
 $(ODIR)/sbstage $(ODIR)/sbstage.exe: $(SDIR)/sbstage.c $(LDIR)/jWrite.c
 $(ODIR)/sbterrain $(ODIR)/sbterrain.exe: $(SDIR)/sbterrain.c
 $(ODIR)/sbtext $(ODIR)/sbtext.exe: $(SDIR)/sbtext.c

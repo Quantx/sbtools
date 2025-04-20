@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "jWrite.h"
+char json_buffer[1<<20]; // 1MB
+
 #ifdef __linux__
 #include <errno.h>
 #include <sys/types.h>
@@ -37,11 +40,11 @@ struct xsb_sound {
     uint16_t volume;
     uint16_t pitch;
     uint8_t track_count;
-    uint8_t layer;
+    int8_t layer;
     uint8_t category;
     uint8_t flags;
     uint16_t param3d;
-    uint8_t priority;
+    int8_t priority;
     uint8_t i3dl2_volume;
     uint16_t eq_gain;
     uint16_t eq_freq;
@@ -237,11 +240,11 @@ int decode_xwb(char * basepath, char * xwb_name, char ** track_names) {
         char path[256];
         snprintf(path, sizeof(path), "%s%s%c", basepath, xwb_name, SEPARATOR);
         
-        #ifdef __linux__
-            if (mkdir(path, 0777) < 0 && errno != EEXIST) {
-        #else
-            if (!CreateDirectory(path, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
-        #endif
+#ifdef __linux__
+        if (mkdir(path, 0777) < 0 && errno != EEXIST) {
+#else
+        if (!CreateDirectory(path, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
+#endif
             fprintf(stderr, "Failed to create output directory: %s\n", path);
             fclose(xwb);
             return 1;
@@ -377,10 +380,17 @@ int main(int argc, char ** argv) {
         xwb_track_names[i] = calloc(xwb_track_counts[i], sizeof(char *));
     }
     
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
     for (uint32_t i = 0; i < cue_count; i++) {
         struct xsb_cue * cue = cues + i;
         
+        jwArr_object(); // Start of Cue object
+        
         char * name = string_table + (cue->name - string_offset);
+        
+        jwObj_int("id", i);
+        jwObj_string("name", name);
         
         if (cue->variations != -1) {
             printf("Cue %04d has variations\n", i);
@@ -393,6 +403,22 @@ int main(int argc, char ** argv) {
         }
         
         struct xsb_sound * sound = sounds + cue->sound;
+        
+        jwObj_object("sound"); // Start of Sound object
+        
+        jwObj_double("volume", (double)(sound->volume) / 65535.0);
+        jwObj_double("pitch", (double)(sound->pitch) / 65535.0);
+        // jwObj_int("track_count", sound->track_count); // Always 1
+        jwObj_int("layer", sound->layer);
+        jwObj_int("category", sound->category);
+        jwObj_int("flags", sound->flags);
+        jwObj_int("param3d", sound->param3d);
+        //jwObj_int("priority", sound->priority); // Always -1
+        jwObj_int("i3dl2_volume", sound->i3dl2_volume);
+        // jwObj_int("eq_gain", sound->eq_gain); // Always 0
+        // jwObj_int("eq_freq", sound->eq_freq); // Always 0
+        
+        jwEnd(); // End of Sound object
         
         uint16_t track = sound->track;
         uint16_t bank = sound->bank;
@@ -412,7 +438,7 @@ int main(int argc, char ** argv) {
             
             for (int c = 0; c < cmd_count; c++) {
                 long long cmd_pos = ftell(xsb);
-            
+                
                 uint8_t cmd, args;
                 fread(&cmd, sizeof(uint8_t), 1, xsb);
                 fseek(xsb, 3, SEEK_CUR);
@@ -466,7 +492,29 @@ int main(int argc, char ** argv) {
         if (!xwb_track_names[bank][track] || strlen(name) < strlen(xwb_track_names[bank][track])) {
             xwb_track_names[bank][track] = name;
         }
+        
+        jwObj_string("bank", xwb_names[bank]);
+        jwObj_string("file", xwb_track_names[bank][track]);
+        
+        jwEnd(); // End of Cue Object
     }
+    
+    int jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        return 1;
+    }
+    
+    char outPath[256];
+    snprintf(outPath, sizeof(outPath), "%scues.json", path);
+    FILE * out = fopen(outPath, "w");
+    if (!out) {
+        fprintf(stderr, "Failed to open: %s\n", outPath);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), out);
+    fclose(out);
     
     for (uint32_t i = 0; i < xwb_count; i++) {
         if (decode_xwb(path, xwb_names[i], xwb_track_names[i])) return 1; 

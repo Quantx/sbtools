@@ -15,7 +15,7 @@ SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 
 IS_WINDOWS = os.name == 'nt'
 
-DESIRED_GODOT = "4.3"
+DESIRED_GODOT = "4.4.1"
 
 GODOT_GITHUB_LINUX = {
     "x86": "linux.x86_32",
@@ -551,6 +551,9 @@ def main(root_path, godot_path):
     # Copy cockpit ejection bar
     os.replace(os.path.join(BIN_PATHS["MODEL"], "1323.gltf"),  os.path.join(cockpit_base_path, "1323.gltf"))
     os.replace(os.path.join(BIN_PATHS["MODEL"], "1323.glbin"), os.path.join(cockpit_base_path, "1323.glbin"))
+    
+    # Copy pilot poses
+    os.replace(os.path.join(XBE_PATH, "pilot_poses.json"), os.path.join(cockpit_base_path, "pilot_poses.json"))
     
     # Copy OS data
     os_base_path = os.path.join(cockpit_base_path, "os");
