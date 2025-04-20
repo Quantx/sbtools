@@ -297,6 +297,62 @@ int decode_xwb(char * basepath, char * xwb_name, char ** track_names) {
     return 0;
 }
 
+struct sndque {
+    char name[32];
+    int id;
+    int param;
+};
+
+int unpackDATA(char * path) {
+    FILE * datf = fopen(path, "rb");
+    if (!datf) {
+        fprintf(stderr, "Failed to open: %s\n", path);
+        return 1;
+    }
+
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+
+    fseek(datf, 0x494B0, SEEK_SET);
+    for (int i = 0; i < 1176; i++) {
+        struct sndque que;
+        fread(&que, sizeof(struct sndque), 1, datf);
+        
+        jwArr_object();
+        
+        jwObj_string("name", que.name);
+        jwObj_int("id", que.id);
+        jwObj_int("param", que.param);
+        
+        jwEnd();
+    }
+
+    int jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        return 1;
+    }
+    
+    char * sep = strrchr(path, SEPARATOR);
+    if (sep) {
+        sep[1] = '\0';
+    } else {
+        *path = '\0';
+    }
+    
+    char outPath[256];
+    snprintf(outPath, sizeof(outPath), "%scue_lookup.json", path);
+    FILE * out = fopen(outPath, "w");
+    if (!out) {
+        fprintf(stderr, "Failed to open: %s\n", outPath);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), out);
+    fclose(out);
+
+    return 0;
+}
+
 int main(int argc, char ** argv) {
     progname = *argv++; argc--;
 
@@ -308,6 +364,9 @@ int main(int argc, char ** argv) {
     }
     
     char * path = *argv++; argc--;
+    
+    char * ext = strrchr(path, '.');
+    if (ext && !strcmp(ext + 1, "seg")) return unpackDATA(path);
     
     FILE * xsb = fopen(path, "rb");
     if (!xsb) {
@@ -380,17 +439,14 @@ int main(int argc, char ** argv) {
         xwb_track_names[i] = calloc(xwb_track_counts[i], sizeof(char *));
     }
     
-    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
     
     for (uint32_t i = 0; i < cue_count; i++) {
         struct xsb_cue * cue = cues + i;
         
-        jwArr_object(); // Start of Cue object
-        
         char * name = string_table + (cue->name - string_offset);
         
-        jwObj_int("id", i);
-        jwObj_string("name", name);
+        jwObj_object(name); // Start of Cue object
         
         if (cue->variations != -1) {
             printf("Cue %04d has variations\n", i);
