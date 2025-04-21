@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <math.h>
 
 #include "jWrite.h"
 char json_buffer[1<<20]; // 1MB
@@ -38,7 +39,7 @@ struct xsb_sound {
         uint32_t offset;
     };
     uint16_t volume;
-    uint16_t pitch;
+    int16_t pitch;
     uint8_t track_count;
     int8_t layer;
     uint8_t category;
@@ -340,7 +341,7 @@ int unpackDATA(char * path) {
     }
     
     char outPath[256];
-    snprintf(outPath, sizeof(outPath), "%scue_lookup.json", path);
+    snprintf(outPath, sizeof(outPath), "%scues.json", path);
     FILE * out = fopen(outPath, "w");
     if (!out) {
         fprintf(stderr, "Failed to open: %s\n", outPath);
@@ -439,14 +440,10 @@ int main(int argc, char ** argv) {
         xwb_track_names[i] = calloc(xwb_track_counts[i], sizeof(char *));
     }
     
-    jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
-    
     for (uint32_t i = 0; i < cue_count; i++) {
         struct xsb_cue * cue = cues + i;
         
         char * name = string_table + (cue->name - string_offset);
-        
-        jwObj_object(name); // Start of Cue object
         
         if (cue->variations != -1) {
             printf("Cue %04d has variations\n", i);
@@ -459,22 +456,6 @@ int main(int argc, char ** argv) {
         }
         
         struct xsb_sound * sound = sounds + cue->sound;
-        
-        jwObj_object("sound"); // Start of Sound object
-        
-        jwObj_double("volume", (double)(sound->volume) / 65535.0);
-        jwObj_double("pitch", (double)(sound->pitch) / 65535.0);
-        // jwObj_int("track_count", sound->track_count); // Always 1
-        jwObj_int("layer", sound->layer);
-        jwObj_int("category", sound->category);
-        jwObj_int("flags", sound->flags);
-        jwObj_int("param3d", sound->param3d);
-        //jwObj_int("priority", sound->priority); // Always -1
-        jwObj_int("i3dl2_volume", sound->i3dl2_volume);
-        // jwObj_int("eq_gain", sound->eq_gain); // Always 0
-        // jwObj_int("eq_freq", sound->eq_freq); // Always 0
-        
-        jwEnd(); // End of Sound object
         
         uint16_t track = sound->track;
         uint16_t bank = sound->bank;
@@ -543,16 +524,49 @@ int main(int argc, char ** argv) {
             return 1;
         }
         
+        // Update original sound so it can be referenced later
+        sound->track = track;
+        sound->bank = bank;
+        
         printf("Cue %04d name \"%.16s\": bank \"%s\", track %03d\n", i, name, xwb_names[bank], track);
         
         if (!xwb_track_names[bank][track] || strlen(name) < strlen(xwb_track_names[bank][track])) {
             xwb_track_names[bank][track] = name;
         }
+    }
         
-        jwObj_string("bank", xwb_names[bank]);
-        jwObj_string("file", xwb_track_names[bank][track]);
+    jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
+    
+    for (uint32_t i = 0; i < cue_count; i++) {
+        struct xsb_cue * cue = cues + i;
         
-        jwEnd(); // End of Cue Object
+        char * name = string_table + (cue->name - string_offset);
+        
+        struct xsb_sound * sound = sounds + cue->sound;
+        
+        jwObj_object(name); // Start of Sound object
+        
+        if (sound->pitch < -8192 || sound->pitch > 8191) {
+            fprintf(stderr,"Pitch out of range: %d\n", sound->pitch);
+            return 1;
+        }
+        
+        jwObj_double("volume", (double)(sound->volume) * -64.0 / 65535.0);
+        jwObj_double("pitch", pow(2.0, (double)(sound->pitch) / 4096.0));
+        // jwObj_int("track_count", sound->track_count); // Always 1
+        jwObj_int("layer", sound->layer);
+        jwObj_int("category", sound->category);
+        jwObj_int("flags", sound->flags);
+        jwObj_int("param3d", sound->param3d);
+        //jwObj_int("priority", sound->priority); // Always -1
+        jwObj_int("i3dl2_volume", sound->i3dl2_volume);
+        // jwObj_int("eq_gain", sound->eq_gain); // Always 0
+        // jwObj_int("eq_freq", sound->eq_freq); // Always 0
+        
+        jwObj_string("bank", xwb_names[sound->bank]);
+        jwObj_string("file", xwb_track_names[sound->bank][sound->track]);
+        
+        jwEnd(); // End of Sound Object
     }
     
     int jw_err = jwClose();
@@ -562,7 +576,7 @@ int main(int argc, char ** argv) {
     }
     
     char outPath[256];
-    snprintf(outPath, sizeof(outPath), "%scues.json", path);
+    snprintf(outPath, sizeof(outPath), "%ssounds.json", path);
     FILE * out = fopen(outPath, "w");
     if (!out) {
         fprintf(stderr, "Failed to open: %s\n", outPath);

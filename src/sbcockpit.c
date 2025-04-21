@@ -224,8 +224,7 @@ struct os_anim { // 64 bytes (16 x 4)
     };
 };
 
-// OS animations play at 10fps instead of the typical 20fps
-const float original_fps = 10.0f;
+const float original_fps = 20.0f;
 
 char * progname;
 char out_path[512];

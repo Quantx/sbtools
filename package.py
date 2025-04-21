@@ -461,6 +461,10 @@ def main(root_path, godot_path):
                 res = subprocess.run([ffmpeg_path, "-y", "-i", sound_path, "-acodec", "libvorbis", sound_ogg])
                 if res.returncode != 0: return 1
 
+    # Extract sound data from engine
+    res = subprocess.run([tool_path("sbsound"), os.path.join(XBE_PATH, ".data.seg")])
+    if res.returncode != 0: return 1
+
     # Unpack effects
     res = subprocess.run([tool_path("sbeffect"), os.path.join(EFFECT_PATH, "effect.efp")])
     if res.returncode != 0: return 1
@@ -844,7 +848,10 @@ def main(root_path, godot_path):
                 os.replace(ogg_path, os.path.join(sound_bank_path, sound))
     
     # Copy Sound Cue file
-    os.replace(os.path.join(SOUND_PATH, "cues.json"), os.path.join(sound_base_path, "cues.json"))
+    os.replace(os.path.join(SOUND_PATH, "sounds.json"), os.path.join(sound_base_path, "sounds.json"))
+    
+    # Copy Sound Cue lookup table
+    os.replace(os.path.join(XBE_PATH, "cues.json"), os.path.join(sound_base_path, "cues.json"))
 
     # Build Godot package
     res = subprocess.run([godot_path, "--headless", "--path", "build", "--export-pack", "Proprietary", os.path.join("..", "Proprietary.pck")])
