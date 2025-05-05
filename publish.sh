@@ -28,4 +28,4 @@ sed -i -e "s/<SBTOOLS_VERSION>/$sbtools_version/g" sbtools/package.py
 
 # Zip output directory
 rm sbtools.zip
-zip sbtools.zip sbtools/* sbtools/linux/* sbtools/windows/*
+zip "sbtools-$sbtools_version.zip" sbtools/* sbtools/linux/* sbtools/windows/*
