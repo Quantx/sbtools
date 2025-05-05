@@ -30,6 +30,9 @@ struct xsb_cue {
     uint32_t transitions;
 } __attribute__((packed));
 
+#define XSB_SOUND_VOLUME(volume) (-0.5 * (double)(volume >> 9))
+#define XSB_SOUND_VOLUME_LFE(volume) (-0.16 * (double)(volume & 0x1FFu)) // Low-Freq-Effects
+
 struct xsb_sound {
     union {
         struct {
@@ -38,7 +41,7 @@ struct xsb_sound {
         };
         uint32_t offset;
     };
-    uint16_t volume;
+    uint16_t lfe_volume;
     int16_t pitch;
     uint8_t track_count;
     int8_t layer;
@@ -49,6 +52,23 @@ struct xsb_sound {
     uint8_t i3dl2_volume;
     uint16_t eq_gain;
     uint16_t eq_freq;
+} __attribute__((packed));
+
+struct xsb_param3d {
+    int16_t inside_cone_angle;
+    int16_t outside_cone_angle;
+    int16_t outside_cone_volume;
+    int16_t unknown0;
+    
+    float minimum_distance;
+    float maximum_distance;
+    float distance_factor;
+    float rolloff_factor;
+    float doppler_factor;
+    
+    int32_t unknown1;
+    int32_t unknown2;
+    int32_t unknown3;
 } __attribute__((packed));
 
 struct xwb_region {
@@ -67,6 +87,7 @@ enum xwb_codec {
     XWB_CODEC_UNKNOWN
 };
 const char * xwb_codec_names[] = {"  PCM", "ADPCM", "  WMA", "?????"};
+const char * xwb_codec_exts[] = {"wav", "xwav", "wma", "unknown"};
 
 #define XWB_TRACK_CODEC(format) ((format                    ) & ((1 <<  2) - 1))
 #define XWB_TRACK_CHANS(format) ((format >> (2)             ) & ((1 <<  3) - 1))
@@ -95,6 +116,33 @@ struct xadpcm_wav_header {
     struct wav_header wav;
     uint16_t nibblesPerBlock; // Always 64
 } __attribute__((packed));
+
+struct smpl_header {
+    uint32_t manufacturer;
+    uint32_t product;
+    uint32_t sample_period;
+    uint32_t midi_unity_note;
+    uint32_t midi_pitch_fraction;
+    uint32_t smpte_format;
+    uint32_t smpte_offset;
+    uint32_t loop_count;
+    uint32_t sample_data_size;
+};
+
+enum  {
+    SMPL_LOOP_TYPE_FORWARD  = 0,
+    SMPL_LOOP_TYPE_PINGPONG = 1,
+    SMPL_LOOP_TYPE_BACKWARD = 2,
+};
+
+struct smpl_loop {
+    uint32_t id;
+    uint32_t type;
+    uint32_t start;
+    uint32_t end;
+    uint32_t fraction;
+    uint32_t iterations;
+};
 
 FILE * open_xwb(char * basepath, char * xwb_name) {
     char path[256];
@@ -147,14 +195,19 @@ int get_xwb_track_count(char * basepath, char * xwb_name) {
     return track_count;
 }
 
-int write_wav_header(FILE * fd, struct wav_header * header, uint32_t data_size) {
+int write_wav_header(FILE * fd, struct wav_header * header, uint32_t data_size, uint32_t loop_count) {
     uint32_t header_size = sizeof(struct wav_header);
     if (header->format == 1) header_size -= sizeof(uint16_t);
     else header_size += header->extraSize;
     
-    uint32_t wav_size = 8 + // RIFF + file_size
+    uint32_t wav_size = // 8 + // "RIFF" + file_size (THIS IS NOT PART OF THE SIZE)
                         12 + header_size + // (WAVEfmt + header_size) + header
-                        8 + data_size; // (data + size) + data 
+                        8 + data_size; // ("data" + size) + data
+
+    if (loop_count) {
+        // ("smpl" + header_size) + sizeof(loop) * loop_count
+        wav_size += 8 + sizeof(struct smpl_header) + sizeof(struct smpl_loop) * loop_count;
+    }
 
     fputs("RIFF", fd);
     fwrite(&wav_size, sizeof(uint32_t), 1, fd);
@@ -165,6 +218,25 @@ int write_wav_header(FILE * fd, struct wav_header * header, uint32_t data_size) 
     
     fputs("data", fd);
     fwrite(&data_size, sizeof(uint32_t), 1, fd);
+}
+
+int write_smpl_chunk(FILE * fd, struct xwb_track * track) {
+    fputs("smpl", fd);
+    uint32_t chunk_size = sizeof(struct smpl_header) + sizeof(struct smpl_loop);
+    fwrite(&chunk_size, sizeof(uint32_t), 1, fd);
+    
+    uint32_t rate = XWB_TRACK_RATE(track->format);
+    struct smpl_header header = {
+        .sample_period = 1000000000 / rate,
+        .loop_count = 1
+    };
+    fwrite(&header, sizeof(struct smpl_header), 1, fd);
+    
+    struct smpl_loop loop = {0, SMPL_LOOP_TYPE_FORWARD,
+        track->loop.pos,
+        track->loop.pos + track->loop.len,
+    };
+    fwrite(&loop, sizeof(struct smpl_loop), 1, fd);
 }
 
 int decode_xwb(char * basepath, char * xwb_name, char ** track_names) {
@@ -231,12 +303,17 @@ int decode_xwb(char * basepath, char * xwb_name, char ** track_names) {
         char * name = track_names[i];
         if (!name) name = name_guess;
         
-        printf("Track %03d | Codec %s, Chans %d, Rate %d, Align %d, Bits %2d | %s\n",
-            i, codec_name, chans, rate, align, bits, name);
+        uint32_t blockAlign = chans * (codec == XWB_CODEC_PCM ? bits / 8 : 36);
+        
+        track->loop.pos /= blockAlign;
+        track->loop.len /= blockAlign;
+        
+        printf("Track %03d | Codec %s, Chans %d, Rate %d, Align %d, Bits %2d, Loop %d:%d | %s\n",
+            i, codec_name, chans, rate, align, bits,
+            track->loop.pos, track->loop.len,
+            name);
         
         if (codec == XWB_CODEC_UNKNOWN) continue;
-        
-        char * ext = codec == XWB_CODEC_WMA ? "wma" : "wav"; 
         
         char path[256];
         snprintf(path, sizeof(path), "%s%s%c", basepath, xwb_name, SEPARATOR);
@@ -251,6 +328,8 @@ int decode_xwb(char * basepath, char * xwb_name, char ** track_names) {
             return 1;
         }
         
+        const char * ext = xwb_codec_exts[codec];
+        
         snprintf(path, sizeof(path), "%s%s%c%s.%s", basepath, xwb_name, SEPARATOR, name, ext);
         FILE * out = fopen(path, "wb");
         if (!out) {
@@ -258,27 +337,31 @@ int decode_xwb(char * basepath, char * xwb_name, char ** track_names) {
             continue;
         }
         
+        bool loops = track->loop.len > 0;
+        
         // Generate header
         switch (codec) {
         case XWB_CODEC_PCM: {
             struct wav_header header = {0x0001, chans, rate};
-            header.blockAlign = (bits / 8) * chans;
+            header.blockAlign = blockAlign;
             header.avgBytesPerSec = header.blockAlign * rate;
             header.bitsPerSample = bits;
             
-            write_wav_header(out, &header, track->play.len); 
+            write_wav_header(out, &header, track->play.len, loops); 
         } break;
         case XWB_CODEC_ADPCM: {
             struct xadpcm_wav_header header = {{0x0069, chans, rate}, 64};
-            header.wav.blockAlign = 36 * chans;
+            header.wav.blockAlign = blockAlign;
             header.wav.bitsPerSample = 4;
             header.wav.extraSize = 2;
             uint32_t dw = (((header.wav.blockAlign - (7 * chans)) * 8) / (4 * chans)) + 2;
             header.wav.avgBytesPerSec = (rate / dw) * header.wav.blockAlign;
             
-            write_wav_header(out, &header.wav, track->play.len);
+            write_wav_header(out, &header.wav, track->play.len, loops);
         } break;
         // WMA files are ready to go as the header is encoded with the data
+        default:
+            loops = false;
         }
         
         fseek(xwb, segments[3].pos + track->play.pos, SEEK_SET);
@@ -289,6 +372,10 @@ int decode_xwb(char * basepath, char * xwb_name, char ** track_names) {
                 break;
             }
             fputc(byte, out);
+        }
+        
+        if (loops) {
+            write_smpl_chunk(out, track);
         }
         
         fclose(out);
@@ -398,22 +485,27 @@ int main(int argc, char ** argv) {
     }
     
     fseek(xsb, 0x8, SEEK_SET);
-    uint32_t string_offset, entry_offset, string_end;
+    uint32_t string_offset, crossfade_offset, params3d_offset, unknown_offset;
     fread(&string_offset, sizeof(uint32_t), 1, xsb);
-    fread(&entry_offset, sizeof(uint32_t), 1, xsb);
-    fread(&string_end, sizeof(uint32_t), 1, xsb);
-    uint32_t string_length = string_end - string_offset;
+    fread(&crossfade_offset, sizeof(uint32_t), 1, xsb);
+    fread(&params3d_offset, sizeof(uint32_t), 1, xsb);
+    fread(&unknown_offset, sizeof(uint32_t), 1, xsb);
+    uint32_t string_length = params3d_offset - string_offset;
     
-    fseek(xsb, 0x1C, SEEK_SET);
-    uint16_t sound_count, cue_count;
+    printf("Strings: %X, Params 3D: %X, Crossfade: %X, Unknown: %X\n", string_offset, params3d_offset, crossfade_offset, unknown_offset);
+    
+    fseek(xsb, 0x1A, SEEK_SET);
+    uint16_t unknown0_count, sound_count, cue_count, unknown1_count, xwb_count;
+    fread(&unknown0_count, sizeof(uint16_t), 1, xsb);
     fread(&sound_count, sizeof(uint16_t), 1, xsb);
     fread(&cue_count, sizeof(uint16_t), 1, xsb);
-    
-    fseek(xsb, 0x22, SEEK_SET);
-    uint16_t xwb_count;
+    fread(&unknown1_count, sizeof(uint16_t), 1, xsb);
     fread(&xwb_count, sizeof(uint16_t), 1, xsb);
     
-    printf("Reading XSB file: %d wavebanks, %d sounds, %d cues\n", xwb_count, sound_count, cue_count);
+    uint32_t params3d_count = (crossfade_offset - params3d_offset) / sizeof(struct xsb_param3d);
+    
+    printf("Reading XSB file: %d unknown0, %d sounds, %d cues, %d unknown1, %d wavebanks, %d params 3D\n",
+        unknown0_count, sound_count, cue_count, unknown1_count, xwb_count, params3d_count);
     
     fseek(xsb, 0x38, SEEK_SET);
     
@@ -426,6 +518,10 @@ int main(int argc, char ** argv) {
     fseek(xsb, string_offset, SEEK_SET);
     char * string_table = malloc(string_length);
     fread(string_table, sizeof(char), string_length, xsb);
+    
+    fseek(xsb, params3d_offset, SEEK_SET);
+    struct xsb_param3d * params3d = malloc(params3d_count * sizeof(struct xsb_param3d));
+    fread(params3d, sizeof(struct xsb_param3d), params3d_count, xsb);
     
     char ** xwb_names = malloc(xwb_count * sizeof(char *));
     for (uint32_t i = 0; i < xwb_count; i++) {
@@ -485,6 +581,7 @@ int main(int argc, char ** argv) {
                 
                 printf("Command trace (%08llX): %02X args %d", cmd_pos, cmd, args);
                 
+                // NOTE: Command type 1 never actually occurs
                 if (cmd == 0 || cmd == 1) {
                     fseek(xsb, 3, SEEK_CUR);
                     if (cmd == 0 && args != 0x4) {
@@ -551,17 +648,39 @@ int main(int argc, char ** argv) {
             return 1;
         }
         
-        jwObj_double("volume", (double)(sound->volume) * -64.0 / 65535.0);
+        double volume = XSB_SOUND_VOLUME(sound->lfe_volume);
+        double volume_lfe = XSB_SOUND_VOLUME_LFE(sound->lfe_volume); // Low-Freq-Effects
+        
+        jwObj_double("volume", volume);
+        jwObj_double("volume_lfe", volume_lfe);
         jwObj_double("pitch", pow(2.0, (double)(sound->pitch) / 4096.0));
         // jwObj_int("track_count", sound->track_count); // Always 1
         jwObj_int("layer", sound->layer);
         jwObj_int("category", sound->category);
         jwObj_int("flags", sound->flags);
-        jwObj_int("param3d", sound->param3d);
         //jwObj_int("priority", sound->priority); // Always -1
-        jwObj_int("i3dl2_volume", sound->i3dl2_volume);
+        jwObj_int("volume_i3dl2", sound->i3dl2_volume);
         // jwObj_int("eq_gain", sound->eq_gain); // Always 0
         // jwObj_int("eq_freq", sound->eq_freq); // Always 0
+        
+        if (sound->param3d >= params3d_count) {
+            printf("Invalid param3d index %d, max is %d\n", sound->param3d, params3d_count);
+            return 1;
+        }
+        
+        struct xsb_param3d * param3d = params3d + sound->param3d;
+        
+        jwObj_object("3D");
+        jwObj_int("inside_cone_angle", param3d->inside_cone_angle);
+        jwObj_int("outside_cone_angle", param3d->outside_cone_angle);
+        jwObj_int("outside_cone_volume", param3d->outside_cone_volume);
+        
+        jwObj_double("minimum_distance", param3d->minimum_distance);
+        jwObj_double("maximum_distance", param3d->maximum_distance);
+        jwObj_double("distance_factor", param3d->distance_factor);
+        jwObj_double("rolloff_factor", param3d->rolloff_factor);
+        jwObj_double("doppler_factor", param3d->doppler_factor);
+        jwEnd();
         
         jwObj_string("bank", xwb_names[sound->bank]);
         jwObj_string("file", xwb_track_names[sound->bank][sound->track]);

@@ -454,11 +454,23 @@ def main(root_path, godot_path):
             if not os.path.isfile(sound_path):
                 continue
             
-            sound_ogg, ext = os.path.splitext(sound_path)
-            sound_ogg += ".ogg"
-            if ext == ".wav" or ext == ".wma":
-                print("Converting sound:", sound_path)
-                res = subprocess.run([ffmpeg_path, "-y", "-i", sound_path, "-acodec", "libvorbis", sound_ogg])
+            sound_base, ext = os.path.splitext(sound_path)
+            if ext == ".wma":
+                print("Converting sound to OGG:", sound_path)
+                sound_base += ".ogg"
+                res = subprocess.run([ffmpeg_path, "-y", "-i", sound_path, "-acodec", "libvorbis", sound_base])
+                if res.returncode != 0: return 1
+            elif ext == ".xwav":
+                print("Converting sound to PCM WAV:", sound_path)
+                sound_base += ".wav"
+                res = subprocess.run([ffmpeg_path, "-y", "-i", sound_path, "-f", "wav", sound_base])
+                if res.returncode != 0: return 1
+            elif os.path.basename(sound_base).startswith("STRM"):
+                # TODO: Get rid of this once Godot supports 5.1 surround WAVs
+                print("Converting sound to Stereo PCM WAV:", sound_path);
+                sound_base += ".wav"
+                res = subprocess.run([ffmpeg_path, "-y", "-i", sound_path, "-ac", "2", "-f", "wav", "temp.wav"])
+                os.replace("temp.wav", sound_base)
                 if res.returncode != 0: return 1
 
     # Extract sound data from engine
@@ -844,7 +856,7 @@ def main(root_path, godot_path):
                 continue
             
             _, ext = os.path.splitext(ogg_path)
-            if ext == ".ogg":
+            if ext in [".wav", ".ogg"]:
                 os.replace(ogg_path, os.path.join(sound_bank_path, sound))
     
     # Copy Sound Cue file
