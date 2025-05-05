@@ -20,6 +20,7 @@ for file in bin/*; do
 	fi
 done
 
+cp README.md sbtools/README.md
 cp package.py sbtools/package.py
 cp export_presets.cfg sbtools/export_presets.cfg
 cp package.bat sbtools/DRAG_ONTO_ME.bat
