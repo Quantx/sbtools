@@ -7,11 +7,15 @@ import shutil
 import stat
 import platform
 import urllib.request
+import hashlib
 import lzma
+import time
+import json
 from zipfile import ZipFile
 from tarfile import TarFile
 from io import BytesIO
 
+SBTOOLS_VERSION = "<SBTOOLS_VERSION>"
 
 SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 
@@ -498,6 +502,31 @@ def main(root_path, godot_path):
     if not os.path.isdir(out_path):
         os.makedirs(out_path)
     
+    # Generate build info
+    buildinfo_path = os.path.join(out_path, "buildinfo.json")
+    with open(buildinfo_path, "w") as buildinfo_file:
+        uname_info = list(platform.uname())
+        del uname_info[1] # Don't leak the hostname
+        
+        godot_version = subprocess.run([godot_path, "--version"], capture_output = True, text = True)
+        if godot_version.returncode != 0: return 1
+        
+        ffmpeg_version = subprocess.run([ffmpeg_path, "-version"], capture_output = True, text = True)
+        if ffmpeg_version.returncode != 0: return 1
+        
+        xbe_hash = ""
+        with open(os.path.join(root_path, "default.xbe"), "rb") as xbe_file:
+            xbe_hash = hashlib.sha256(xbe_file.read()).hexdigest()
+        
+        buildinfo = {
+            "sbtools": SBTOOLS_VERSION,
+            "godot": godot_version.stdout.strip(),
+            "ffmpeg": ffmpeg_version.stdout.strip(),
+            "timestamp": time.time(),
+            "platform": uname_info,
+            "xbe_hash": xbe_hash,
+        }
+        json.dump(buildinfo, buildinfo_file, indent=4)
     
     # Copy Godot data
     godot_presets = "export_presets.cfg"

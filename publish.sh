@@ -1,4 +1,8 @@
 #!/bin/bash
+sbtools_version="0.4.0.$(date +%s)"
+
+echo "Publishing sbtools version: $sbtools_version"
+
 # Ensure all binaries are up to date
 make
 
@@ -19,6 +23,8 @@ done
 cp package.py sbtools/package.py
 cp export_presets.cfg sbtools/export_presets.cfg
 cp package.bat sbtools/DRAG_ONTO_ME.bat
+
+sed -i -e "s/<SBTOOLS_VERSION>/$sbtools_version/g" sbtools/package.py
 
 # Zip output directory
 rm sbtools.zip
