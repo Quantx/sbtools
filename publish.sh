@@ -21,6 +21,7 @@ for file in bin/*; do
 done
 
 cp README.md sbtools/README.md
+cp 00-sbc.rules sbtools/00-sbc.rules
 cp package.py sbtools/package.py
 cp export_presets.cfg sbtools/export_presets.cfg
 cp package.bat sbtools/DRAG_ONTO_ME.bat
