@@ -2,7 +2,7 @@
 Mod Tools for Steel Battalion: Line of Contact
 
 ## Windows Usage
-Ensure you have Python 3 installed, you can download the latest version from the [https://apps.microsoft.com/search?query=python3](Windows Store).
+Ensure you have Python 3 installed, you can download the latest version from the [Windows Store](https://apps.microsoft.com/search?query=python3).
 
 Your Line of Contact folder should contain "default.xbe" and "media". Drag and drop this folder onto "DRAG_ONTO_ME.bat" and sbtools should begin the conversion process after downloading FFMPEG and Godot.
 
