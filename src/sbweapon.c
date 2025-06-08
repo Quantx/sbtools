@@ -18,12 +18,6 @@ char * progname;
 char out_path[265];
 char json_buffer[1<<20]; // 1MB
 
-struct file_data {
-    uint32_t offset;
-    uint32_t length;
-    uint32_t count;
-};
-
 struct section_header {
     uint32_t flags;
     // Virtual Address
@@ -88,6 +82,22 @@ struct __attribute__((__packed__)) weapon_data {
     uint8_t flying_effect;
     uint8_t horizontal_muzzle_count;
     uint8_t vertical_muzzle_count;
+};
+
+struct __attribute__((__packed__)) smoke_data {
+    uint8_t color_start_a;
+    uint8_t color_start_r;
+    uint8_t color_start_g;
+    uint8_t color_start_b;
+    uint8_t color_max_a;
+    uint8_t color_max_r;
+    uint8_t color_max_g;
+    uint8_t color_max_b;
+    int32_t print_max;
+    float start_size;
+    float end_size;
+    uint32_t flags;
+    uint32_t padding[8];
 };
 
 #define WEP_CLASS_COUNT 3
@@ -186,8 +196,8 @@ int main(int argc, char ** argv) {
     uint32_t file_count;
     fread(&file_count, sizeof(uint32_t), 1, wdat);
     
-    struct file_data files[file_count];
-    fread(files, sizeof(struct file_data), file_count, wdat);
+    uint32_t file_sizes[file_count];
+    fread(file_sizes, sizeof(uint32_t), file_count, wdat);
 
     fseek(datf, 0x58A90, SEEK_SET);
     fread(tama_data_ptrs, sizeof(uint32_t), TAMA_DATA_LEN, datf);
@@ -206,14 +216,20 @@ int main(int argc, char ** argv) {
     
     jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
     
-    for (int we = 0; we < files[0].count; we++) {
+    uint32_t weapon_type_count;
+    fread(&weapon_type_count, sizeof(uint32_t), 1, wdat);
+    
+    if (weapon_type_count != WEP_CLASS_COUNT) {
+        fprintf(stderr, "Weapon type count %u instead of %u\n", weapon_type_count, WEP_CLASS_COUNT);
+        return 1;
+    }
+    
+    uint32_t weapon_type_sizes[weapon_type_count];
+    fread(weapon_type_sizes, sizeof(uint32_t), weapon_type_count, wdat);
+    
+    for (int we = 0; we < weapon_type_count; we++) {
         uint32_t weapon_count;
         fread(&weapon_count, sizeof(uint32_t), 1, wdat);
-    
-        if (we >= WEP_CLASS_COUNT) {
-            fprintf(stderr, "Weapon entry %d > 2\n", we);
-            return 1;
-        }
 
         uint32_t weapon_lookup_ptrs[weapon_count];
         fseek(datf, we ? 0x58790 : 0x58480, SEEK_SET);
@@ -322,6 +338,46 @@ int main(int argc, char ** argv) {
         
         jwEnd();
     }
+    
+    uint32_t smoke_type_count;
+    fread(&smoke_type_count, sizeof(uint32_t), 1, wdat);
+    
+    uint32_t smoke_type_sizes[smoke_type_count];
+    fread(smoke_type_sizes, sizeof(uint32_t), smoke_type_count, wdat);
+    
+    jwObj_array("smoke");
+    for (uint32_t sm = 0; sm < 10; sm++) {
+        struct smoke_data smk;
+        fread(&smk, sizeof(struct smoke_data), 1, wdat);
+        
+        jwArr_object();
+        jwObj_array("color_start");
+            jwArr_int(smk.color_start_r);
+            jwArr_int(smk.color_start_g);
+            jwArr_int(smk.color_start_b);
+            jwArr_int(smk.color_start_a);
+        jwEnd();
+        
+        jwObj_array("color_max");
+            jwArr_int(smk.color_max_r);
+            jwArr_int(smk.color_max_g);
+            jwArr_int(smk.color_max_b);
+            jwArr_int(smk.color_max_a);
+        jwEnd();
+        
+        jwObj_int("print_max", smk.print_max);
+        jwObj_double("start_size", smk.start_size);
+        jwObj_double("end_size", smk.end_size);
+        
+        for (int i = 0; i < 8; i++) {
+            if (smk.padding[i]) {
+                fprintf(stderr, "PADDING AT %d:%d WAS NON ZERO: %08X\n", sm, i, smk.padding[i]);
+                return 1;
+            }
+        }
+        jwEnd();
+    }
+    jwEnd();
     
     fclose(wdat);
     fclose(datf);

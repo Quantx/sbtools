@@ -1,5 +1,5 @@
 #!/bin/bash
-sbtools_version="0.4.0.$(date +%s)"
+sbtools_version="0.4.1.$(date +%s)"
 
 echo "Publishing sbtools version: $sbtools_version"
 

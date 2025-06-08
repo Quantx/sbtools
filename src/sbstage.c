@@ -207,7 +207,7 @@ int unpackSTG(long map, int tod) {
     emit_float_array(fvec, 4);
     jwEnd();
     
-    fread(&ival, sizeof(uint32_t), 1, stgf);
+    fread(&ival, sizeof(uint32_t), 1, stgf); // Shadow Draw Mode
     if (ival) {
         fprintf(stderr, "Magic value at 0x50 was non-zero %08X\n", ival);
         return 1;
@@ -216,12 +216,12 @@ int unpackSTG(long map, int tod) {
     fread(&fval, sizeof(float), 1, stgf);
     jwObj_double("sky_height", fval);
     
-    jwObj_array("top_cloud_velocity");
+    jwObj_array("sky_scroll_0");
     fread(fvec, sizeof(float), 2, stgf);
     emit_float_array(fvec, 2);
     jwEnd();
     
-    jwObj_array("bottom_cloud_velocity");
+    jwObj_array("sky_scroll_1");
     fread(fvec, sizeof(float), 2, stgf);
     emit_float_array(fvec, 2);
     jwEnd();
@@ -236,10 +236,10 @@ int unpackSTG(long map, int tod) {
     jwObj_bool("draw_rain", ival);
     
     fread(&ival, sizeof(uint32_t), 1, stgf);
-    jwObj_int("integer_0x74", ival);
+    jwObj_int("tactics_time", ival);
     
     fread(&ival, sizeof(uint32_t), 1, stgf);
-    jwObj_int("integer_0x78", ival);
+    jwObj_bool("do_predraw", ival);
     
     fread(&ival, sizeof(uint32_t), 1, stgf);
     jwObj_bool("draw_shadows", ival);
@@ -254,10 +254,10 @@ int unpackSTG(long map, int tod) {
     jwObj_bool("draw_water", ival);
     
     fread(&fval, sizeof(float), 1, stgf);
-    jwObj_double("float_0x8C", fval);
+    jwObj_double("point_light_rate", fval);
     
     // Skip value at 0x90 as it's just the World Fog Color again
-    fseek(stgf, sizeof(uint32_t), SEEK_CUR);
+    fseek(stgf, sizeof(uint32_t), SEEK_CUR); // World Fog uint32
 
     fread(&fval, sizeof(float), 1, stgf);
     jwObj_double("fog_start", fval);
@@ -277,10 +277,14 @@ int unpackSTG(long map, int tod) {
     fread(&fval, sizeof(float), 1, stgf);
     jwObj_double("shadow_scale", fval);
     
-    jwObj_array("position_0xAC");
-    fread(fvec, sizeof(float), 3, stgf);
-    emit_float_array(fvec, 3);
-    jwEnd();
+    fread(&fval, sizeof(float), 1, stgf);
+    jwObj_double("shadow_angle", fval);
+    
+    fread(&fval, sizeof(float), 1, stgf);
+    jwObj_double("shadow_start", fval);
+    
+    fread(&fval, sizeof(float), 1, stgf);
+    jwObj_double("shadow_end", fval);
     
     fread(&fval, sizeof(float), 1, stgf);
     jwObj_double("shadow_yaw", fval);
@@ -301,10 +305,10 @@ int unpackSTG(long map, int tod) {
     jwObj_int("water_texture", ival);
     
     fread(&fval, sizeof(float), 1, stgf);
-    jwObj_double("float_0xD0", fval);
+    jwObj_double("flash_shadow_rate", fval);
     
-    fread(&fval, sizeof(float), 1, stgf);
-    jwObj_double("float_0xD4", fval);
+    fread(&ival, sizeof(uint32_t), 1, stgf);
+    jwObj_double("area_over_size", ival);
     
     fread(&ival, sizeof(uint32_t), 1, stgf);
     jwObj_int("ticket_a", ival);
@@ -330,7 +334,7 @@ int unpackSTG(long map, int tod) {
     fread(&ival, sizeof(uint32_t), 1, stgf);
     jwObj_int("integer_0xF4", ival);
     
-    jwObj_array("color_0xF8");
+    jwObj_array("water_color");
     fread(fvec, sizeof(float), 4, stgf);
     emit_float_array(fvec, 4);
     jwEnd();

@@ -276,6 +276,8 @@ def main(root_path, godot_path):
     WEAPDATA_PATH = os.path.join(root_path, "media", "weapon")
     
     EFFECT_PATH = os.path.join(root_path, "media", "effdata")
+    
+    LID_PATH = os.path.join(root_path, "media", "lid")
 
     # Unpack the XBE
     XBE_PATH = os.path.join(root_path, "default")
@@ -489,9 +491,13 @@ def main(root_path, godot_path):
     for effect in os.listdir(EFFECT_PATH):
         _, ext = os.path.splitext(effect)
         eff_path = os.path.join(EFFECT_PATH, effect)
-        if ext in [".efe", ".seq", ".uv2"]:
+        if ext in [".efe", ".seq", ".uv", ".uv2"]:
             res = subprocess.run([tool_path("sbeffect"), eff_path])
             if res.returncode != 0: return 1
+    
+    # Convert effect lights
+    res = subprocess.run([tool_path("sbeffect"), os.path.join(LID_PATH, "eff.lid")])
+    if res.returncode != 0: return 1
     
     # Extract engine effect data
     res = subprocess.run([tool_path("sbeffect"), os.path.join(XBE_PATH, ".data.seg")])
@@ -820,13 +826,19 @@ def main(root_path, godot_path):
     # Copy effect table
     shutil.copy(os.path.join(EFFECT_PATH, "effect.tbl"), os.path.join(effect_path, "effect_ids.data"))
     
+    # Copy effect engine cues
+    os.replace(os.path.join(XBE_PATH, "effect_cues.json"), os.path.join(effect_path, "effect_cues.json"))
+    
     # Copy effect light data
-    os.replace(os.path.join(XBE_PATH, "lightdata.json"), os.path.join(effect_path, "lightdata.json"))
+    os.replace(os.path.join(LID_PATH, "eff.json"), os.path.join(effect_path, "point_lights.json"))
     
     # Copy effect data
     effect_path_eff = os.path.join(effect_path, "eff")
     if not os.path.isdir(effect_path_eff):
         os.makedirs(effect_path_eff)
+    effect_path_seq = os.path.join(effect_path, "seq")
+    if not os.path.isdir(effect_path_seq):
+        os.makedirs(effect_path_seq)
     effect_path_spr = os.path.join(effect_path, "spr")
     if not os.path.isdir(effect_path_spr):
         os.makedirs(effect_path_spr)
@@ -840,6 +852,8 @@ def main(root_path, godot_path):
         if ext == ".json":
             if name.startswith("eff"):
                 os.replace(eff_path, os.path.join(effect_path_eff, effect.removeprefix("eff")))
+            elif name.startswith("seq"):
+                os.replace(eff_path, os.path.join(effect_path_seq, effect.removeprefix("seq")))
             elif name.startswith("spr"):
                 os.replace(eff_path, os.path.join(effect_path_spr, effect.removeprefix("spr")))
             elif name.startswith("ui"):

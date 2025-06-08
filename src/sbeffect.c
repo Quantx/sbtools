@@ -22,15 +22,15 @@ const char separator = '\\';
 struct file_entry {
     uint32_t offset;
     uint32_t length;
-};
+} __attribute__((packed));
 
 struct vector3 {
     float x, y, z;
-};
+} __attribute__((packed));
 
 struct color4 {
-    float b, g, r, a;
-};
+    float r, g, b, a;
+} __attribute__((packed));
 
 struct effect_entry {
     int16_t effect_type; // 0 = 2D_SIN, 1 = 2D_REP, 2 = 2D_PAR, 3 = LINPAR, 4 = GK, 5 = 3D_SIN, 6 = 3D_REP, 7 = 3D_PAR
@@ -46,7 +46,10 @@ struct effect_entry {
     uint8_t vertex_color_g;
     uint8_t vertex_color_r;
     uint8_t vertex_color_a;
-    struct color4 color_damping;
+    float color_damping_b;
+    float color_damping_g;
+    float color_damping_r;
+    float color_damping_a;
     int32_t life;
     int32_t delay;
     struct vector3 position;
@@ -254,11 +257,10 @@ int unpackEFE(char * path) {
         jwObj_int("sequence", effect.sequence);
         jwObj_int("model", effect.model);
         
-        // TODO flags
         jwObj_bool("attr_rev_velo", effect.attrs & EFFECT_ENTRY_ATTR_REV_VELO);
         jwObj_bool("attr_not_fog",  effect.attrs & EFFECT_ENTRY_ATTR_NOT_FOG);
-        jwObj_bool("attr_not_bill", effect.attrs & EFFECT_ENTRY_ATTR_NOT_BILL);
         jwObj_bool("attr_dir_sprt", effect.attrs & EFFECT_ENTRY_ATTR_DIR_SPRT);
+        jwObj_bool("attr_not_bill", effect.attrs & EFFECT_ENTRY_ATTR_NOT_BILL);
         jwObj_bool("attr_flg_cockpit", effect.attrs & EFFECT_ENTRY_ATTR_FLG_COCKPIT);
         
         if (effect.attrs & ~(EFFECT_ENTRY_ATTR_REV_VELO | EFFECT_ENTRY_ATTR_NOT_FOG | EFFECT_ENTRY_ATTR_DIR_SPRT | EFFECT_ENTRY_ATTR_NOT_BILL | EFFECT_ENTRY_ATTR_FLG_COCKPIT)) {
@@ -274,7 +276,12 @@ int unpackEFE(char * path) {
             jwArr_int(effect.vertex_color_a);
         jwEnd();
         
-        jwObj_color4("damping_color", &effect.color_damping);
+        jwObj_array("damping_color");
+            jwArr_double(effect.color_damping_r);
+            jwArr_double(effect.color_damping_g);
+            jwArr_double(effect.color_damping_b);
+            jwArr_double(effect.color_damping_a);
+        jwEnd();
         
         jwObj_int("life", effect.life);
         jwObj_int("delay", effect.delay);
@@ -326,12 +333,65 @@ int unpackEFE(char * path) {
     return 0;
 }
 
-int unpackUV(char * path) {
+int unpackSEQ(char * path) {
+    strncpy(out_path, path, sizeof(out_path));
+    char * ext = strrchr(out_path, '.');
+    
+    FILE * seq = fopen(out_path, "rb");
+    if (!seq) {
+        fprintf(stderr, "Failed to open %s\n", out_path);
+        return 2;
+    }
+    
+    uint32_t seq_count;
+    fread(&seq_count, sizeof(uint32_t), 1, seq);
+    
+    printf("Converting sequence file: %d frames\n", seq_count);
+    
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
+    for (int i = 0; i < seq_count; i++) {
+        int16_t seq_frame, seq_time;
+        fread(&seq_frame, sizeof(int16_t), 1, seq);
+        fread(&seq_time, sizeof(int16_t), 1, seq);
+        
+        jwArr_object();
+        jwObj_int("frame", seq_frame);
+        jwObj_int("time", seq_time);
+        jwEnd();
+    }
+    
+    fclose(seq);
+    
+    int jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        return 1;
+    }
+    
+    // Rename it from eff000.seq to seq000.json
+    memcpy(ext - 6, "seq", 3);
+    strcpy(ext + 1, "json");
+    FILE * out = fopen(out_path, "w");
+    if (!out) {
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), out);
+    
+    fclose(out);
+    return 0;
+}
+
+int unpackUV(char * path, bool isUI) {
     FILE * uv = fopen(path, "rb");
     if (!uv) {
         fprintf(stderr, "Failed to open %s\n", path);
         return 2;
     }
+    
+    jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
     
     uint32_t uv_count;
     fread(&uv_count, sizeof(uint32_t), 1, uv);
@@ -377,45 +437,6 @@ int unpackUV(char * path) {
     jwEnd();
     
     fclose(uv);
-    return 0;
-}
-
-int unpackSEQ(char * path) {
-    strncpy(out_path, path, sizeof(out_path));
-    char * ext = strrchr(out_path, '.');
-    
-    FILE * seq = fopen(out_path, "rb");
-    if (!seq) {
-        fprintf(stderr, "Failed to open %s\n", out_path);
-        return 2;
-    }
-    
-    uint32_t seq_count;
-    fread(&seq_count, sizeof(uint32_t), 1, seq);
-    
-    printf("Converting sequence file: %d frames\n", seq_count);
-    
-    jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
-    
-    jwObj_array("sequence");
-    for (int i = 0; i < seq_count; i++) {
-        int16_t seq_frame, seq_time;
-        fread(&seq_frame, sizeof(int16_t), 1, seq);
-        fread(&seq_time, sizeof(int16_t), 1, seq);
-        
-        jwArr_object();
-        jwObj_int("frame", seq_frame);
-        jwObj_int("time", seq_time);
-        jwEnd();
-    }
-    jwEnd();
-    
-    fclose(seq);
-    
-    jwObj_object("uv");
-    strcpy(ext + 1, "uv");
-    if (unpackUV(out_path)) return 1;
-    jwEnd();
     
     int jw_err = jwClose();
     if (jw_err) {
@@ -423,39 +444,19 @@ int unpackSEQ(char * path) {
         return 1;
     }
     
-    // Rename it from eff000.seq to spr000.json
-    memcpy(ext - 6, "spr", 3);
-    strcpy(ext + 1, "json");
-    FILE * out = fopen(out_path, "w");
-    if (!out) {
-        fprintf(stderr, "Failed to open output file: %s\n", out_path);
-        return 1;
-    }
-    
-    fwrite(json_buffer, sizeof(char), strlen(json_buffer), out);
-    
-    fclose(out);
-    return 0;
-}
-
-int unpackUV2(char * path) {
-    jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
-
-    if (unpackUV(path)) return 1;
-    
-    int jw_err = jwClose();
-    if (jw_err) {
-        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
-        return 1;
-    }
-    
-    // Rename it from eff000.seq to ui000.json
+    // Rename it from eff000.seq to <out_ext>000.json
     strncpy(out_path, path, sizeof(out_path)); 
     char * ext = strrchr(out_path, '.');
     
-    memmove(ext - 4, ext - 3, 3); // Move ID back 1 character without overwriting self
-    memcpy(ext - 6, "ui", 2); // Change name to ui
-    strcpy(ext - 1, ".json"); // Add extension
+    if (isUI) {
+        memmove(ext - 4, ext - 3, 3); // Move ID back 1 character without overwriting self
+        memcpy(ext - 6, "ui", 2); // Change name to ui
+        strcpy(ext - 1, ".json"); // Add extension
+    } else {
+        memcpy(ext - 6, "spr", 3);
+        strcpy(ext + 1, "json");
+    }
+    
     FILE * out = fopen(out_path, "w");
     if (!out) {
         fprintf(stderr, "Failed to open output file: %s\n", out_path);
@@ -465,6 +466,88 @@ int unpackUV2(char * path) {
     fwrite(json_buffer, sizeof(char), strlen(json_buffer), out);
     
     fclose(out);
+    return 0;
+}
+
+int unpackLID(char * path) {
+    FILE * lidf = fopen(path, "rb");
+    if (!lidf) {
+        fprintf(stderr, "Failed to open file: %s\n", out_path);
+        return 1;
+    }
+    
+    uint32_t entry_count, entry_size;
+    fread(&entry_count, sizeof(uint32_t), 1, lidf);
+    fread(&entry_size, sizeof(uint32_t), 1, lidf);
+    
+    if (entry_size != 40) {
+        fprintf(stderr, "Unrecognized entry size of %u\n", entry_size);
+        fclose(lidf);
+        return 1;
+    }
+    
+    printf("Extracting %u lights\n", entry_count);
+    
+    jwOpen(json_buffer, sizeof(json_buffer), JW_ARRAY, JW_PRETTY);
+    
+    unsigned int valid_light_count = 0;
+    
+    for (unsigned int i = 0; i < entry_count; i++) {
+        uint32_t flags;
+        uint16_t colorAddCount, life;
+        struct color4 colorAdd, colorBase;
+        struct vector3 position;
+        
+        fread(&flags, sizeof(uint32_t), 1, lidf);
+        fread(&colorAddCount, sizeof(uint16_t), 1, lidf);
+        fread(&life, sizeof(uint16_t), 1, lidf);
+        fread(&colorAdd, sizeof(struct color4), 1, lidf);
+        fread(&colorBase, sizeof(struct color4), 1, lidf);
+        
+        if (flags != 1) continue;
+        
+        valid_light_count++;
+        
+        if (!colorAddCount) {
+            colorAdd.r = 0.0f;
+            colorAdd.g = 0.0f;
+            colorAdd.b = 0.0f;
+            colorAdd.a = 0.0f;
+        }
+        
+        jwArr_object();
+            jwObj_int("life", life);
+            jwObj_int("colorAddCount", colorAddCount);
+            
+            jwObj_color4("colorBase", &colorBase);
+            jwObj_color4("colorAdd", &colorAdd);
+        jwEnd();
+    }
+    
+    fclose(lidf);
+    
+    printf("Extracted %u valid lights\n", valid_light_count);
+    
+    int jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        return 1;
+    }
+    
+    strncpy(out_path, path, sizeof(out_path)); 
+    char * ext = strrchr(out_path, '.');
+    strcpy(ext + 1, "json");
+    
+    FILE * out = fopen(out_path, "w");
+    if (!out) {
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), out);
+    
+    fclose(out);
+    
     return 0;
 }
 
@@ -578,8 +661,8 @@ int unpackSEG(char * path) {
         return 1;
     }
     
-    if (sep) strcpy(sep + 1, "lightdata.json");
-    else strcpy(out_path, "lightdata.json");
+    if (sep) strcpy(sep + 1, "effect_cues.json");
+    else strcpy(out_path, "effect_cues.json");
     
     FILE * outf = fopen(out_path, "w");
     if (!outf) {
@@ -614,8 +697,10 @@ int main(int argc, char ** argv) {
     if (!strcmp(ext, "efp")) return unpackEFP(path);
     else if (!strcmp(ext, "efe")) return unpackEFE(path);
     else if (!strcmp(ext, "seq")) return unpackSEQ(path);
-    else if (!strcmp(ext, "uv2")) return unpackUV2(path);
+    else if (!strcmp(ext,  "uv")) return unpackUV(path, false);
+    else if (!strcmp(ext, "uv2")) return unpackUV(path, true);
     else if (!strcmp(ext, "seg")) return unpackSEG(path);
+    else if (!strcmp(ext, "lid")) return unpackLID(path);
     else {
         fprintf(stderr, "Unknown file extension: %s\n", path);
         return 1;
