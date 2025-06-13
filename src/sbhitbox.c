@@ -24,6 +24,7 @@ struct atari_header {
     uint32_t data_index;
 } __attribute__((__packed__));
 
+#define ATARI_DATA_COUNT_MAX 4000
 struct atari_data {
     int32_t val;
     struct vector3 verts[4];
@@ -32,7 +33,7 @@ struct atari_data {
     uint32_t flags1;
     struct vector3 norm;
     uint32_t zero1;
-} __attribute__((__packed__)) atari_data_list[4000];
+} __attribute__((__packed__)) atari_data_list[ATARI_DATA_COUNT_MAX];
 size_t atari_data_count = 0;
 
 char * progname;
@@ -81,6 +82,11 @@ int process_header(FILE * ppd, unsigned int level) {
         if (header.sub_header_count) {
             if (process_header(ppd, level + 2)) return 1;
         } else {
+            if (atari_data_count + header.data_count >= ATARI_DATA_COUNT_MAX) {
+                fprintf(stderr, "Atari data overflow\n");
+                return 1;
+            }
+            
             struct atari_data * data = atari_data_list + atari_data_count;
             
             size_t r = fread(data, sizeof(struct atari_data), header.data_count, ppd);
