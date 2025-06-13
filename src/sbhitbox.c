@@ -10,11 +10,30 @@
 
 #define HEADER_SIZE 16
 
-struct entry {
-    int32_t pos[3];
-    int16_t verts[3][3];
-    uint16_t padding;
+struct vector3 {
+    float x, y, z;
 } __attribute__((__packed__));
+
+struct atari_header {
+    int32_t center[3]; // Center of AABB
+    uint16_t extents[3]; // Extents of AABB
+    uint16_t sub_header_count;
+    uint16_t data_count;
+    uint16_t zero;
+    uint32_t next_header_offset;
+    uint32_t data_index;
+} __attribute__((__packed__));
+
+struct atari_data {
+    int32_t val;
+    struct vector3 verts[4];
+    uint32_t zero0;
+    uint32_t flags0;
+    uint32_t flags1;
+    struct vector3 norm;
+    uint32_t zero1;
+} __attribute__((__packed__)) atari_data_list[4000];
+size_t atari_data_count = 0;
 
 char * progname;
 char out_path[256];
@@ -23,26 +42,86 @@ char * gltf_path;
 
 const float scale_factor = 100.0f;
 
-uint32_t vert_count = 0;
-float verts[20000];
+static inline size_t write_vec3(struct vector3 v, FILE * f) {
+    return fwrite(&v, sizeof(struct vector3), 1, f);
+}
 
-uint32_t quad_count = 0;
-uint32_t quad_flags0[4000];
-uint32_t quad_flags1[4000];
+int process_header(FILE * ppd, unsigned int level) {
+    while (true) {
+        size_t header_pos = ftell(ppd);
+        
+        struct atari_header header;
+        fread(&header, sizeof(struct atari_header), 1, ppd);
+        
+        struct vector3 center = {header.center[0], header.center[1], header.center[2]};
+        center.x /= scale_factor;
+        center.y /= scale_factor;
+        center.z /= scale_factor;
+        
+        struct vector3 extents = {header.extents[0], header.extents[1], header.extents[2]};
+        extents.x /= scale_factor;
+        extents.y /= scale_factor;
+        extents.z /= scale_factor;
+        
+        printf("%*sAABB-START (%f, %f, %f)\n", level, "",
+            center.x - extents.x, center.y - extents.y, center.z - extents.z);
+        printf("%*sAABB-END   (%f, %f, %f)\n", level, "",
+            center.x + extents.x, center.y + extents.y, center.z + extents.z);
+        
+        printf("%*sSub Header Count %u\n", level, "", header.sub_header_count);
+        printf("%*sNext Header Offset %u\n", level, "", header.next_header_offset);
+        printf("%*sData Index %u\n", level, "", header.data_index);
+        printf("%*sData Count %u\n", level, "", header.data_count);
+        
+        if (header.zero) {
+            fprintf(stderr, "Header entry \"zero\" was non-zero: %08X\n", header.zero);
+            return 1;
+        }
+        
+        if (header.sub_header_count) {
+            if (process_header(ppd, level + 2)) return 1;
+        } else {
+            struct atari_data * data = atari_data_list + atari_data_count;
+            
+            size_t r = fread(data, sizeof(struct atari_data), header.data_count, ppd);
+            if (r != header.data_count) {
+                fprintf(stderr, "Failed to read all data entries, got %lu of %u\n", r, header.data_count);
+                return 1;
+            }
+            
+            atari_data_count += r;
+            
+            for (int di = 0; di < r; di++) {
+                for (int i = 0; i < 4; i++) {
+                    data[di].verts[i].x /= scale_factor;
+                    data[di].verts[i].y /= scale_factor;
+                    data[di].verts[i].z /= scale_factor;
+                    
+                    printf("%*sPOS%d (%f, %f, %f)\n", level + 2, "",
+                        i, data[di].verts[i].x, data[di].verts[i].y, data[di].verts[i].z);
+                }
+                
+                printf("%*sFlags0 %08X\n", level + 2, "", data[di].flags0);
+                printf("%*sFlags1 %08X\n", level + 2, "", data[di].flags1);
+                
+                printf("%*sNORM (%f, %f, %f)\n", level + 2, "",
+                    data[di].norm.x, data[di].norm.y, data[di].norm.z);
+                
+                if (data[di].zero0) {
+                    fprintf(stderr, "Data entry \"zero0\" was non-zero: %08X\n", data[di].zero0);
+                    return 1;
+                }
+                
+                if (data[di].zero1) {
+                    fprintf(stderr, "Data entry \"zero1\" was non-zero: %08X\n", data[di].zero1);
+                    return 1;
+                }
+            }
+        }
 
-void write_verts(FILE * outf) {
-    printf("Writing %d quad attributes\n", quad_count);
-    
-    fwrite(&quad_count, sizeof(uint32_t), 1, outf);
-    fwrite(quad_flags0, sizeof(uint32_t), quad_count, outf);
-    fwrite(quad_flags1, sizeof(uint32_t), quad_count, outf);
-    quad_count = 0;
-
-    printf("Writing %d verts\n", vert_count);
-    
-    fwrite(&vert_count, sizeof(uint32_t), 1, outf);
-    fwrite(verts, 3 * sizeof(float), vert_count, outf);
-    vert_count = 0;
+        if (!header.next_header_offset) return 0;
+        fseek(ppd, header_pos + header.next_header_offset, SEEK_SET);
+    }
 }
 
 int main(int argc, char ** argv) {
@@ -73,14 +152,15 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    uint32_t code;
-    fread(&code, sizeof(uint32_t), 1, ppd);
-    printf("Code: %08X | %d\n", code, code);
+    uint32_t margin;
+    fread(&margin, sizeof(uint32_t), 1, ppd);
+    float margin_scaled = (float)(margin) / scale_factor;
+    printf("Margin: %d, %f\n", margin, margin_scaled);
     
-    uint32_t parts;
-    fread(&parts, sizeof(uint32_t), 1, ppd);
+    uint32_t part_count;
+    fread(&part_count, sizeof(uint32_t), 1, ppd);
 
-    printf("Processing %d hitbox parts\n", parts);
+    printf("Processing %d hitbox parts\n", part_count);
 
     uint32_t zero;
     fread(&zero, sizeof(uint32_t), 1, ppd);
@@ -89,13 +169,11 @@ int main(int argc, char ** argv) {
     fread(&zero, sizeof(uint32_t), 1, ppd);
     if (zero) printf("Non-zero value at 0x12: %08X\n", zero);
     
-    uint32_t offsets[parts];
-    fread(offsets, sizeof(uint32_t), parts, ppd);
+    uint32_t part_offsets[part_count];
+    fread(part_offsets, sizeof(uint32_t), part_count, ppd);
     
     uint32_t bone_offset;
     fread(&bone_offset, sizeof(uint32_t), 1, ppd);
-    
-    fseek(ppd, HEADER_SIZE + offsets[0], SEEK_SET);
     
     strncpy(out_path, ppd_path, sizeof(out_path));
 
@@ -112,123 +190,56 @@ int main(int argc, char ** argv) {
         return 1;
     }
     
-    fwrite(&parts, sizeof(uint32_t), 1, outf);
+    fwrite(&part_count, sizeof(uint32_t), 1, outf);
     
-    int current_part = 0;
-    
-    bool done = false;
-    while (true) {
-        long current_offset = ftell(ppd) - HEADER_SIZE;
-        if (bone_offset && current_offset >= bone_offset) {
-            done = true;
-            break;
+    for (int p = 0; p < part_count; p++) {
+        fseek(ppd, HEADER_SIZE + part_offsets[p], SEEK_SET);
+        
+        printf("*** Processing part %d ***\n", p);
+        
+        atari_data_count = 0;
+        if (process_header(ppd, 0)) return 1;
+        
+        printf("*** Processed %lu data entries ***\n", atari_data_count);
+        
+        fwrite(&atari_data_count, sizeof(uint32_t), 1, outf);
+        
+        // Output all triangles
+        for (int di = 0; di < atari_data_count; di++) {
+            struct vector3 * verts = atari_data_list[di].verts;
+            // Triangle 2 (First Half of Quad)
+            // Reverse the winding order 1 -> 0 -> 2
+            write_vec3(verts[1], outf);
+            write_vec3(verts[0], outf);
+            write_vec3(verts[2], outf);
+            // Triangle 2 (Second Half of Quad)
+            write_vec3(verts[3], outf);
+            write_vec3(verts[1], outf);
+            write_vec3(verts[2], outf);
         }
         
-        if (current_part < parts - 1 && current_offset >= offsets[current_part + 1]) {
-            write_verts(outf);
-            current_part++;
-        }
-
-        while (true) {
-            struct entry test;        
-            if (fread(&test, sizeof(struct entry), 1, ppd) != 1) {
-                done = true;
-                break;
-            }
-            
-            // This is such a dumb hack
-            if (test.pos[0] == -1 &&
-                (test.padding
-                || test.pos[1] < -1000000
-                || test.pos[1] >  1000000
-                || test.pos[2] < -1000000
-                || test.pos[2] >  1000000)) break;
-            
-            printf("POS (%d, %d, %d)", test.pos[0], test.pos[1], test.pos[2]);
-            for (int i = 0; i < 3; i++) {
-                printf(" | VERT%d (%d, %d, %d)", i, test.verts[i][0], test.verts[i][1], test.verts[i][2]);
-            }
-            
-            if (test.padding) {
-                printf(" | PADDING: %04X", test.padding);
-            }
-            
-            printf("\n");
+        // Output all flag0
+        for (int di = 0; di < atari_data_count; di++) {
+            fwrite(&atari_data_list[di].flags0, sizeof(uint32_t), 1, outf);
         }
         
-        if (done) break;
-
-        fseek(ppd, sizeof(uint32_t) - sizeof(struct entry), SEEK_CUR);
-
-        float * vptr = verts + (vert_count * 3);
-        fread(vptr, sizeof(float), 12, ppd);
-        
-        for (int i = 0; i < 12; i++) {
-            vptr[i] /= scale_factor;
+        // Output all flag1
+        for (int di = 0; di < atari_data_count; di++) {
+            fwrite(&atari_data_list[di].flags1, sizeof(uint32_t), 1, outf);
         }
-        
-        fread(&zero, sizeof(uint32_t), 1, ppd);
-        if (zero) printf("Non-zero 0 value: %08X\n", zero);
-        
-        uint32_t * flags0 = quad_flags0 + quad_count;
-        fread(flags0, sizeof(uint32_t), 1, ppd);
-        printf("Flags 0: %08X\n", *flags0);
-        
-        uint32_t * flags1 = quad_flags1 + quad_count;
-        fread(flags1, sizeof(uint32_t), 1, ppd);
-        printf("Flags 1: %08X\n", *flags1);
-        
-        quad_count++;
-        
-        float norm[3];
-        fread(norm, sizeof(float), 3, ppd);
-        printf("NORM (%f, %f, %f)\n", norm[0], norm[1], norm[2]);
-        
-        fread(&zero, sizeof(uint32_t), 1, ppd);
-        if (zero) printf("Non-zero 1 value: %08X\n", zero);
-        
-        // Finish 4th triangle
-        vptr[12] = vptr[3];
-        vptr[13] = vptr[4];
-        vptr[14] = vptr[5];
-        
-        vptr[15] = vptr[6];
-        vptr[16] = vptr[7];
-        vptr[17] = vptr[8];
-    
-        // Reverse the winding order
-        float x = vptr[0];
-        float y = vptr[1];
-        float z = vptr[2];
-        
-        vptr[0] = vptr[3];
-        vptr[1] = vptr[4];
-        vptr[2] = vptr[5];
-        
-        vptr[3] = x;
-        vptr[4] = y;
-        vptr[5] = z;
-        
-        vert_count += 6;
-        //fprintf(outf, "f %d %d %d\n", verts, verts + 1, verts + 2);
-        //fprintf(outf, "f %d %d %d\n\n", verts + 3, verts + 2, verts + 1);
-        
-        printf("\n");
     }
-    
-    write_verts(outf);
     
     if (bone_offset) {
         fseek(ppd, HEADER_SIZE + bone_offset, SEEK_SET);
         
         uint8_t bone_count, bone_parts;
-        fread(&bone_count, sizeof(uint8_t), 1, ppd);
-        fread(&bone_parts, sizeof(uint8_t), 1, ppd);
+        fread(&bone_count, sizeof(uint8_t), 1, ppd); // Expected number of bones in the XBO/GLTF
+        fread(&bone_parts, sizeof(uint8_t), 1, ppd); // Should be identical to part_count
         
         printf("Reading data for %d bones, %d parts\n", bone_count, bone_parts);
         
-        if (bone_parts != parts) {
-            printf("Wrong number of parts in bone data: %d != %d\n", bone_parts, parts);
+        if (bone_parts != part_count) {
+            printf("Wrong number of parts in bone data: %d != %d\n", bone_parts, part_count);
         }
         
         fwrite(&bone_parts, sizeof(uint8_t), 1, outf);
@@ -280,6 +291,7 @@ int main(int argc, char ** argv) {
             return 1;
         }
     } else {
+        printf("No bone definitions\n");
         uint8_t no_bones = 0;
         fwrite(&no_bones, sizeof(uint8_t), 1, outf);
     }
