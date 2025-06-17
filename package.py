@@ -210,6 +210,87 @@ VH_ANIMS = {
     85 : [31], # VH31.LMT : Bone count 4
 }
 
+VT_LSQ = [
+    3,  # 0
+    3,  # 1
+    4,  # 2
+    5,  # 3
+    -1, # 4 (Unused)
+    1,  # 5
+    0,  # 6
+    1,  # 7
+    4,  # 8
+    4,  # 9
+    6,  # 10
+    6,  # 11
+    6,  # 12
+    9,  # 13
+    0,  # 14
+    5,  # 15
+    2,  # 16
+    2,  # 17
+    2,  # 18
+    11, # 19
+    11, # 20
+    8,  # 21
+    4,  # 22
+    7,  # 23
+    9,  # 24
+    2,  # 25
+    1,  # 26
+    1,  # 27
+    12, # 28
+    10, # 29
+    0,  # 30
+    1,  # 31
+]
+
+LSQ_TO_GLTF = [
+    # Starting at index 13
+    710, # SWEP08
+    746, # SWEP26
+    748, # SWEP27
+    756, # SWEP31
+    
+    1238, # CNKO0_A
+    1256, # CNKO1_A
+    1271, # CNKO2_A
+    1284, # CNAK1_A
+    1298, # CNLY0_A
+    1310, # CNWM1_A
+    1240, # CNKO0_C
+    1244, # CNKO0_G
+    1245, # CNKO0_H
+    1258, # CNKO1_C
+    1260, # CNKO1_E
+    1262, # CNKO1_G
+    1263, # CNKO1_H
+    1267, # CNKO1_L
+    1273, # CNKO2_C
+    1277, # CNKO2_G
+    1278, # CNKO2_H
+    1300, # CNLY0_C
+    1304, # CNLY0_G
+    1305, # CNLY0_H
+    1286, # CNAK1_C
+    1290, # CNAK1_G
+    1291, # CNAK1_H
+    1312, # CNWM1_C
+    1316, # CNWM1_G
+    1317, # CNWM1_H
+    
+    634, # SWEP_BOX
+    622, # MWEP_CH0
+    624, # MWEP_CH1
+    626, # MWEP_CH2
+    628, # MWEP_CH3
+    630, # MWEP_CH4
+    632, # MWEP_CH5
+    
+    906, # E19
+    916, # E24
+]
+
 def tool_path(tool):
     if IS_WINDOWS:
         return os.path.join("windows", tool + ".exe")
@@ -262,7 +343,7 @@ def main(root_path, godot_path):
         return 1
 
     BIN_PATHS = {}
-    for b in ["ATARI", "MODEL", "MOTION", "TEXTURE", "VTMODEL"]:
+    for b in ["ATARI", "LSQ", "MODEL", "MOTION", "SEQ", "TEXTURE", "VTMODEL"]:
         BIN_PATHS[b] = os.path.join(root_path, "media", "bin", b)
 
     TERRAIN_PATH = os.path.join(root_path, "media", "BumpData")
@@ -399,6 +480,23 @@ def main(root_path, godot_path):
             
             print("Adding motion file:", lmt_path, "To glTF file:", gltf_path)
             subprocess.run([tool_path("sbmotion"), lmt_path, gltf_path])
+    
+    # Convert LSQ Animation Effects
+    for lsq in os.listdir(BIN_PATHS["LSQ"]):
+        _, ext = os.path.splitext(lsq)
+        lsq_path = os.path.join(BIN_PATHS["LSQ"], lsq)
+        if ext == ".lsq":
+            print("Converting LSQ:", lsq_path)
+            res = subprocess.run([tool_path("sblsq"), lsq_path])
+            if res.returncode != 0: return 1
+    
+    for lsq in os.listdir(BIN_PATHS["SEQ"]):
+        _, ext = os.path.splitext(lsq)
+        lsq_path = os.path.join(BIN_PATHS["SEQ"], lsq)
+        if ext == ".lsq":
+            print("Converting LSQ:", lsq_path)
+            res = subprocess.run([tool_path("sblsq"), lsq_path])
+            if res.returncode != 0: return 1
     
     # Cockpit lighting
     subprocess.run([tool_path("sbcockpit"), os.path.join(COCKPIT_PATH, "AMBPACK.amb")])
@@ -617,6 +715,10 @@ def main(root_path, godot_path):
     for i in range(798, 1186, 2):
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.gltf"), os.path.join(mapobj_path, f"{i:04}.gltf"))
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.glbin"), os.path.join(mapobj_path, f"{i:04}.glbin"))
+        
+        if i in LSQ_TO_GLTF:
+            lsqid = LSQ_TO_GLTF.index(i) + 13
+            os.replace(os.path.join(BIN_PATHS["LSQ"], f"{lsqid:04}.json"), os.path.join(mapobj_path, f"lsq{i:04}.json"))
 
     # Copy map hitboxes
     for i in range(0, 176):
@@ -662,6 +764,10 @@ def main(root_path, godot_path):
         for obj in range(objstart, objend, 1):
             os.replace(os.path.join(BIN_PATHS["MODEL"], f"{obj:04}.gltf"),  os.path.join(cockpit_path, f"{obj:04}.gltf"))
             os.replace(os.path.join(BIN_PATHS["MODEL"], f"{obj:04}.glbin"), os.path.join(cockpit_path, f"{obj:04}.glbin"))
+            
+            if obj in LSQ_TO_GLTF:
+                lsqid = LSQ_TO_GLTF.index(obj) + 13
+                os.replace(os.path.join(BIN_PATHS["LSQ"], f"{lsqid:04}.json"), os.path.join(cockpit_path, f"lsq{obj:04}.json"))
         
         # Copy boot lighting data
         for j, offset in enumerate([0, 1, 2, 21, 22, 23, 24]):
@@ -726,6 +832,10 @@ def main(root_path, godot_path):
         if not os.path.isdir(mech_path):
             os.makedirs(mech_path)
     
+        lsqid = VT_LSQ[i]
+        if lsqid >= 0:
+            shutil.copy(os.path.join(BIN_PATHS["LSQ"], f"{lsqid:04}.json"), os.path.join(mech_path, "lsq.json"))
+    
         vtmid = (i * 2) + 560
         if i > 4: vtmid -= 2
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{vtmid:04}.gltf"),  os.path.join(mech_path, f"{vtmid:04}.gltf"))
@@ -755,6 +865,10 @@ def main(root_path, godot_path):
     for wepid in range(622, 758, 2):
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{wepid:04}.gltf"),  os.path.join(weapon_path, f"{wepid:04}.gltf"))
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{wepid:04}.glbin"), os.path.join(weapon_path, f"{wepid:04}.glbin"))
+        
+        if wepid in LSQ_TO_GLTF:
+            lsqid = LSQ_TO_GLTF.index(wepid) + 13
+            os.replace(os.path.join(BIN_PATHS["LSQ"], f"{lsqid:04}.json"), os.path.join(weapon_path, f"lsq{wepid:04}.json"))
     
     # Copy bullet models
     for i in range(1186, 1216, 2):
@@ -858,7 +972,6 @@ def main(root_path, godot_path):
                 os.replace(eff_path, os.path.join(effect_path_spr, effect.removeprefix("spr")))
             elif name.startswith("ui"):
                 os.replace(eff_path, os.path.join(effect_path_ui, effect.removeprefix("ui")))
-            
     
     # Copy effect models
     for i in range(1216, 1236, 2):

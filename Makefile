@@ -7,7 +7,8 @@ LDIR=lib
 ODIR=bin
 
 TARGETS=binarize segment sbbump sbcockpit sbeffect sbengine sbhitbox sbmodel \
-	sbmotion sbshader sbsound sbstage sbterrain sbtext sbtexture sbweapon
+	sbmotion sbshader sbsound sbstage sbterrain sbtext sbtexture sbweapon \
+	sblsq
 
 CFLAGS=-static -g -lm -I$(IDIR)
 
@@ -26,6 +27,7 @@ $(ODIR)/sbcockpit $(ODIR)/sbcockpit.exe: $(SDIR)/sbcockpit.c $(LDIR)/jWrite.c
 $(ODIR)/sbeffect $(ODIR)/sbeffect.exe: $(SDIR)/sbeffect.c $(LDIR)/jWrite.c
 $(ODIR)/sbengine $(ODIR)/sbengine.exe: $(SDIR)/sbengine.c $(LDIR)/jWrite.c
 $(ODIR)/sbhitbox $(ODIR)/sbhitbox.exe: $(SDIR)/sbhitbox.c
+$(ODIR)/sblsq $(ODIR)/sblsq.exe: $(SDIR)/sblsq.c $(LDIR)/jWrite.c
 $(ODIR)/sbmodel $(ODIR)/sbmodel.exe: $(SDIR)/sbmodel.c
 $(ODIR)/sbmotion $(ODIR)/sbmotion.exe: $(SDIR)/sbmotion.c
 $(ODIR)/sbshader $(ODIR)/sbshader.exe: $(SDIR)/sbshader.c

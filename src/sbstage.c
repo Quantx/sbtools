@@ -14,17 +14,17 @@ struct stage_object {
     int16_t life;
     int16_t id;
     int16_t motion;
-    int16_t attr0;
-    int16_t attr1;
-    int16_t attr2;
+    int16_t lsq;
+    int16_t hitbox;
+    uint16_t attr0;
     struct vector3 pos;
     struct vector3 dir;
-    int8_t attr3;
-    int8_t attr4;
-    int16_t attr5;
+    int8_t alpha_clip;
+    int8_t shadow_flag;
+    uint16_t npc_spawn_idx;
     int8_t team_id;
     int8_t ticket_value;
-    int16_t attr6;
+    uint16_t attr1;
     uint32_t flags;
     uint8_t padding[48];
 } __attribute__((packed));
@@ -32,12 +32,12 @@ struct stage_object {
 char * progname;
 char * basepath;
 char path[256];
-char json_buffer[1<<20]; // 1MB
+char json_buffer[1<<24]; // 1MB
 
-void emit_vector3(struct vector3 * v3) {
-    jwArr_double(v3->x);
-    jwArr_double(v3->y);
-    jwArr_double(v3->z);
+void emit_vector3(struct vector3 * v) {
+    jwArr_double(v->x);
+    jwArr_double(v->y);
+    jwArr_double(v->z);
 }
 
 void emit_float_array(float * vals, size_t len) {
@@ -128,16 +128,24 @@ int unpackSEG(long map) {
         
         if (obj.id == -1) break;
 
+        if (obj.attr0) {
+            fprintf(stderr, "Stage object attr0 was non-zero: %04X\n", obj.attr0);
+            return 1;
+        }
+        
+        if (obj.attr1) {
+            fprintf(stderr, "Stage object attr1 was non-zero: %04X\n", obj.attr1);
+            return 1;
+        }
+
         jwArr_object();
         
         jwObj_int("id", obj.id);
         jwObj_int("life", obj.life);
         
         jwObj_int("motion", obj.motion);
-        
-        jwObj_int("attr0", obj.attr1);
-        jwObj_int("attr1", obj.attr2);
-        jwObj_int("attr2", obj.attr3);
+        jwObj_int("lsq", obj.lsq);
+        jwObj_int("hitbox", obj.hitbox);
         
         jwObj_array("position");
         emit_vector3(&obj.pos);
@@ -147,14 +155,12 @@ int unpackSEG(long map) {
         emit_vector3(&obj.dir);
         jwEnd();
         
-        jwObj_int("attr3", obj.attr1);
-        jwObj_int("attr4", obj.attr2);
-        jwObj_int("attr5", obj.attr3);
+        jwObj_int("alpha_clip", obj.alpha_clip);
+        jwObj_int("shadow_flag", obj.shadow_flag);
+        jwObj_int("npc_spawn_idx", obj.npc_spawn_idx);
         
         jwObj_int("team_id", obj.team_id);
         jwObj_int("ticket_value", obj.ticket_value);
-        
-        jwObj_int("attr6", obj.attr4);
         
         jwObj_int("flags", obj.flags);
         

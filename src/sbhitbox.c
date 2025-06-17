@@ -29,8 +29,7 @@ struct atari_data {
     int32_t val;
     struct vector3 verts[4];
     uint32_t zero0;
-    uint32_t flags0;
-    uint32_t flags1;
+    uint64_t flags;
     struct vector3 norm;
     uint32_t zero1;
 } __attribute__((__packed__)) atari_data_list[ATARI_DATA_COUNT_MAX];
@@ -107,11 +106,15 @@ int process_header(FILE * ppd, unsigned int level) {
                         i, data[di].verts[i].x, data[di].verts[i].y, data[di].verts[i].z);
                 }
                 
-                printf("%*sFlags0 %08X\n", level + 2, "", data[di].flags0);
-                printf("%*sFlags1 %08X\n", level + 2, "", data[di].flags1);
+                printf("%*sFlags %16lX\n", level + 2, "", data[di].flags);
                 
                 printf("%*sNORM (%f, %f, %f)\n", level + 2, "",
                     data[di].norm.x, data[di].norm.y, data[di].norm.z);
+                
+                if (data[di].val != -1) {
+                    fprintf(stderr, "Data entry \"val\" was not -1: %d\n", data[di].val);
+                    return 1;
+                }
                 
                 if (data[di].zero0) {
                     fprintf(stderr, "Data entry \"zero0\" was non-zero: %08X\n", data[di].zero0);
@@ -224,14 +227,9 @@ int main(int argc, char ** argv) {
             write_vec3(verts[2], outf);
         }
         
-        // Output all flag0
+        // Output all flags
         for (int di = 0; di < atari_data_count; di++) {
-            fwrite(&atari_data_list[di].flags0, sizeof(uint32_t), 1, outf);
-        }
-        
-        // Output all flag1
-        for (int di = 0; di < atari_data_count; di++) {
-            fwrite(&atari_data_list[di].flags1, sizeof(uint32_t), 1, outf);
+            fwrite(&atari_data_list[di].flags, sizeof(uint64_t), 1, outf);
         }
     }
     
@@ -261,7 +259,7 @@ int main(int argc, char ** argv) {
             return 1;
         }
         
-        int part_count = 0;
+        int valid_bones = 0;
         for (int i = 0; i < bone_count; i++) {
             uint8_t bone_id, part_id;
             fread(&bone_id, sizeof(uint8_t), 1, ppd);
@@ -276,6 +274,7 @@ int main(int argc, char ** argv) {
                 fprintf(stderr, "Bone ID %d exceeded bone count of %d\n", bone_id, bone_count);
                 return 1;
             }
+            
             if (part_id >= bone_parts) {
                 fprintf(stderr, "Part ID %d exceeded part count of %d\n", part_id, bone_parts);
                 return 1;
@@ -289,11 +288,11 @@ int main(int argc, char ** argv) {
             fwrite(&name_len, sizeof(uint32_t), 1, outf);
             fwrite(bone->name, sizeof(char), name_len, outf);
             
-            part_count++;
+            valid_bones++;
         }
         
-        if (part_count != bone_parts) {
-            fprintf(stderr, "Bone part count missmatch %d != %d\n", bone_parts, part_count);
+        if (valid_bones != bone_parts) {
+            fprintf(stderr, "Bone part count missmatch %d != %d\n", valid_bones, bone_parts);
             return 1;
         }
     } else {

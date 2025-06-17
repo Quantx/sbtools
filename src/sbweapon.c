@@ -36,11 +36,22 @@ struct section_header {
     uint8_t checksum[20];
 };
 
-struct __attribute__((__packed__)) model_atribs {
+struct __attribute__((__packed__)) model_config {
     int16_t model;
     int16_t motion;
-    int16_t unknown0;
-    int16_t unknown1;
+    int16_t hitbox;
+    int16_t lsq;
+};
+
+struct __attribute__((__packed__)) mech_model_config {
+    struct model_config mech_cfg;
+    int16_t a;
+    struct model_config hatch_cfg;
+    int16_t b;
+};
+
+struct __attribute__((__packed__)) weapon_model_config {
+    struct model_config cfg;
     uint16_t zero;
     uint16_t flags;
 };
@@ -258,9 +269,9 @@ int main(int argc, char ** argv) {
             
             uint32_t * wep_data_ptrs = we ? swep_data_ptrs : mwep_data_ptrs;
             
-            struct model_atribs weapon_atribs;
+            struct weapon_model_config wep_model_cfg;
             fseek(datf, wep_data_ptrs[weapon_offset] - hdr_data.vaddr, SEEK_SET);
-            fread(&weapon_atribs, sizeof(struct model_atribs), 1, datf);
+            fread(&wep_model_cfg, sizeof(struct weapon_model_config), 1, datf);
             
             int16_t bullet_model;
             fseek(datf, tama_data_ptrs[bullet_offset] - hdr_data.vaddr, SEEK_SET);
@@ -272,7 +283,7 @@ int main(int argc, char ** argv) {
             fseek(rdatf, wep_name_ptrs[i] - hdr_rdata.vaddr, SEEK_SET);
             fread(name, sizeof(char), 16, rdatf);
             
-            printf("WE %d | ID %02d: Weapon %04d, Bullet %04d, Flags: %04X, Name: \"%s\"\n", we, i, weapon_offset, bullet_offset, weapon_atribs.flags, name);
+            printf("WE %d | ID %02d: Weapon %04d, Bullet %04d, Flags: %04X, Name: \"%s\"\n", we, i, weapon_offset, bullet_offset, wep_model_cfg.flags, name);
             
             if (wep.unknown0 || wep.unknown1) {
                 fprintf(stderr, "WEP unknown was non zero, id: %d\n", wep.id);
@@ -320,14 +331,14 @@ int main(int argc, char ** argv) {
             jwObj_int("vertical_muzzle_count", wep.vertical_muzzle_count);
             
             jwObj_int("bullet_model", bullet_model);
-            jwObj_int("weapon_model", weapon_atribs.model);
-            jwObj_int("weapon_motion", weapon_atribs.motion);
+            jwObj_int("weapon_model", wep_model_cfg.cfg.model);
+            jwObj_int("weapon_motion", wep_model_cfg.cfg.motion);
 
-            jwObj_bool("shoulder", weapon_atribs.flags & 0x0001); // Shoulder weapon or SWEP BOX weapon
-            jwObj_bool("shield",   weapon_atribs.flags & 0x0004);
-            jwObj_bool("melee",    weapon_atribs.flags & 0x0008);
-            jwObj_bool("mounted",  weapon_atribs.flags & 0x0800); // Whether or not this contributes to "MOUNT OVER"
-            jwObj_bool("fixed",    weapon_atribs.flags & 0x1000); // Whether or not this weapon can be unequipped
+            jwObj_bool("shoulder", wep_model_cfg.flags & 0x0001); // Shoulder weapon or SWEP BOX weapon
+            jwObj_bool("shield",   wep_model_cfg.flags & 0x0004);
+            jwObj_bool("melee",    wep_model_cfg.flags & 0x0008);
+            jwObj_bool("mounted",  wep_model_cfg.flags & 0x0800); // Whether or not this contributes to "MOUNT OVER"
+            jwObj_bool("fixed",    wep_model_cfg.flags & 0x1000); // Whether or not this weapon can be unequipped
             
             jwEnd();
             
