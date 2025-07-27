@@ -568,17 +568,28 @@ int unpackSEG(char * path) {
     
     jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
     
-    uint32_t cockpitLightTypes[54];
+    static uint32_t cockpitLightTypes[54];
     fseek(datf, 0x36F78, SEEK_SET);
     fread(cockpitLightTypes, sizeof(uint32_t), 54, datf);
     
-    float cockpitLightPositions[162];
+    static float cockpitLightPositions[162];
     fseek(datf, 0x37050, SEEK_SET);
     fread(cockpitLightPositions, sizeof(float), 162, datf);
     
-    struct mech_light mechLights[32];
+    static struct mech_light mechLights[32];
     fseek(datf, 0x56118, SEEK_SET);
     fread(mechLights, sizeof(struct mech_light), 32, datf);
+    
+    static int32_t mechCollisionEffects[34][28][9];
+    fseek(datf, 0x38D80, SEEK_SET);
+    fread(mechCollisionEffects, sizeof(int32_t), 34 * 28 * 9, datf);
+    
+    static int32_t collisionEffects[28][32];
+    fseek(datf, 0x37F5C, SEEK_SET);
+    fread(collisionEffects, sizeof(int32_t), 28 * 32, datf);
+    
+    // Fixup the overlapping data
+    for (int i = 0; i < 9; i++) collisionEffects[0][i] = 0;
     
     fclose(datf);
     
@@ -592,6 +603,31 @@ int unpackSEG(char * path) {
                 jwArr_double(ml->y);
                 jwArr_double(ml->z);
             jwEnd();
+        jwEnd();
+    }
+    jwEnd();
+    
+    jwObj_array("mech_collisions");
+    for (int m = 0; m < 34; m++) {
+        jwArr_array();
+        for (int c = 0; c < 28; c++) {
+            jwArr_array();
+            for (int e = 0; e < 9; e++) {
+                jwArr_int(mechCollisionEffects[m][c][e]);
+            }
+            jwEnd();
+        }
+        jwEnd();
+    }
+    jwEnd();
+    
+    jwObj_array("collisions");
+    for (int c = 0; c < 28; c++) {
+        jwArr_array();
+        for (int e = 9; e < 32; e++) {
+            // Skip the first 9 entries as they're all zeros
+            jwArr_int(collisionEffects[c][e]);
+        }
         jwEnd();
     }
     jwEnd();

@@ -32,6 +32,10 @@ char * helpmsg = "Interactive tool used to edit SB engine data files\n"
 "Unpack engine data: sbengine -u eng_data.eng\n"
 "Pack engine data: sbengine -p eng_data\n";
 
+struct __attribute__((packed)) vector3 {
+    float x, y, z;
+};
+
 struct section_header {
     uint32_t flags;
     // Virtual Address
@@ -50,7 +54,7 @@ struct section_header {
     uint8_t checksum[20];
 };
 
-struct loadout_data {
+struct __attribute__((packed)) loadout_data {
     uint32_t mwep_offset;
     uint32_t swep_offset;
     uint32_t tank_offset;
@@ -60,9 +64,9 @@ struct loadout_data {
     uint8_t class_type; // 0=Standard, 1=Support, 2=Scout, 3=Assult
     uint8_t profile_description; // Used to determine profile description (based on which VT you play)
     uint32_t mounts; // Number of SWEP shoulder weapons that can be mounted
-} __attribute__((packed));
+};
 
-struct engine_data {
+struct __attribute__((packed)) engine_data {
     uint32_t id;
     float weight;
     float tier_r;
@@ -110,20 +114,14 @@ struct engine_data {
     float armor_rear;
 };
 
-struct parts_data {
-    uint32_t mwep_holder;
-    uint32_t unknown0;
-    uint32_t unknown1;
-    float size_offset;
+struct __attribute__((packed)) parts_data {
+    uint32_t id;
+    float collider_offset_z;
     uint32_t manipulator;
-    float size[3];
+    struct vector3 collider_size;
+    uint32_t weapon_mount;
+    uint32_t unknown;
 };
-
-
-
-
-
-
 
 #define VT_NAME_COUNT 32
 char * vt_names[VT_NAME_COUNT] = {
@@ -227,7 +225,7 @@ int export(char * path) {
     uint32_t loadout_fixed_mounts[file_count];
     fread(loadout_fixed_mounts, sizeof(uint32_t), file_count, datf);
     
-    fseek(datf, 0x57A38, SEEK_SET);
+    fseek(datf, 0x57A40, SEEK_SET);
     struct parts_data parts[file_count];
     fread(parts, sizeof(struct parts_data), file_count, datf);
     
@@ -314,15 +312,14 @@ int export(char * path) {
         jwObj_double("armor_side", engdat.armor_side);
         jwObj_double("armor_rear", engdat.armor_rear);
 
-        jwObj_int("weapon_holder", parts[i + 1].mwep_holder); // No idea why the +1 needs to be here, but it's in the source code too
+        jwObj_int("weapon_mount", parts[i].weapon_mount);
         jwObj_int("manipulator", parts[i].manipulator);
-        // jwObj_int("unknown0", parts[i].unknown0);
-        // jwObj_int("unknown1", parts[i].unknown1); // unknown1 = id + 1 | No need to save it
-        jwObj_double("size_offset", parts[i].size_offset / 100.0);
-        jwObj_array("size");
-            jwArr_double(parts[i].size[0] / 100.0);
-            jwArr_double(parts[i].size[1] / 100.0);
-            jwArr_double(parts[i].size[2] / 100.0);
+        
+        jwObj_double("collider_offset_z", parts[i].collider_offset_z / 100.0);
+        jwObj_array("collider_size");
+            jwArr_double(parts[i].collider_size.x / 100.0);
+            jwArr_double(parts[i].collider_size.y / 100.0);
+            jwArr_double(parts[i].collider_size.z / 100.0);
         jwEnd();
 
         jwObj_object("loadout"); { // Start of loadout
@@ -352,29 +349,28 @@ int export(char * path) {
                 jwArr_int(item);
             }
             jwEnd();
-        }
         
-        int8_t preset[LOADOUT_SLOT_COUNT];
-        fseek(datf, loadout_presets[i] - hdr_data.vaddr, SEEK_SET);
-        fread(preset, sizeof(int8_t), LOADOUT_SLOT_COUNT, datf);
-        
-        int8_t fixed[LOADOUT_SLOT_COUNT];
-        bool fixed_valid = loadout_fixed_mounts[i] - hdr_data.vaddr < hdr_data.fsize;
-        
-        if (fixed_valid) {
-            fseek(datf, loadout_fixed_mounts[i] - hdr_data.vaddr, SEEK_SET);
-            fread(fixed, sizeof(int8_t), LOADOUT_SLOT_COUNT, datf);
-            printf("VT %d preset with fixed mounts: Preset %08X, Fixed %08X\n", engdat.id, loadout_presets[i] - hdr_data.vaddr, loadout_fixed_mounts[i] - hdr_data.vaddr);
-        }
+            int8_t preset[LOADOUT_SLOT_COUNT];
+            fseek(datf, loadout_presets[i] - hdr_data.vaddr, SEEK_SET);
+            fread(preset, sizeof(int8_t), LOADOUT_SLOT_COUNT, datf);
+            
+            int8_t fixed[LOADOUT_SLOT_COUNT];
+            bool fixed_valid = loadout_fixed_mounts[i] - hdr_data.vaddr < hdr_data.fsize;
+            
+            if (fixed_valid) {
+                fseek(datf, loadout_fixed_mounts[i] - hdr_data.vaddr, SEEK_SET);
+                fread(fixed, sizeof(int8_t), LOADOUT_SLOT_COUNT, datf);
+                printf("VT %d preset with fixed mounts: Preset %08X, Fixed %08X\n", engdat.id, loadout_presets[i] - hdr_data.vaddr, loadout_fixed_mounts[i] - hdr_data.vaddr);
+            }
 
-        for (int li = 0; li < LOADOUT_SLOT_COUNT; li++) {
-            jwObj_object(loadoutSlotNames[li]);
-            jwObj_int("type", preset[li]);
-            jwObj_bool("fixed", fixed_valid ? fixed[li] : false);
-            jwEnd();
-        }
+            for (int li = 0; li < LOADOUT_SLOT_COUNT; li++) {
+                jwObj_object(loadoutSlotNames[li]);
+                jwObj_int("type", preset[li]);
+                jwObj_bool("fixed", fixed_valid ? fixed[li] : false);
+                jwEnd();
+            }
 
-        jwEnd(); // Loadout object end
+        } jwEnd(); // Loadout object end
 
         jwEnd(); // Array entry end        
         unpack_count++;

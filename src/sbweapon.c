@@ -45,9 +45,9 @@ struct __attribute__((__packed__)) model_config {
 
 struct __attribute__((__packed__)) mech_model_config {
     struct model_config mech_cfg;
-    int16_t a;
+    int16_t emblem_model;
     struct model_config hatch_cfg;
-    int16_t b;
+    int16_t unknown;
 };
 
 struct __attribute__((__packed__)) weapon_model_config {
@@ -333,6 +333,8 @@ int main(int argc, char ** argv) {
             jwObj_int("bullet_model", bullet_model);
             jwObj_int("weapon_model", wep_model_cfg.cfg.model);
             jwObj_int("weapon_motion", wep_model_cfg.cfg.motion);
+            jwObj_int("weapon_hitbox", wep_model_cfg.cfg.hitbox);
+            jwObj_int("weapon_lsq", wep_model_cfg.cfg.lsq);
 
             jwObj_bool("shoulder", wep_model_cfg.flags & 0x0001); // Shoulder weapon or SWEP BOX weapon
             jwObj_bool("shield",   wep_model_cfg.flags & 0x0004);
