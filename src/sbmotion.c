@@ -175,6 +175,10 @@ int main(int argc, char ** argv) {
     realloc_cgltf(data, anim_count, bone_count);
 
     cgltf_buffer * buf = data->buffers;
+    
+    uint32_t buf_padding = sizeof(float) - (buf->size % sizeof(float));
+    buf->size += buf_padding;
+    
     cgltf_buffer_view * buf_view = data->buffer_views + data->buffer_views_count;
     buf_view->name = strdup("Keyframes");
     buf_view->buffer = buf;
@@ -203,8 +207,12 @@ int main(int argc, char ** argv) {
         cgltf_free(data);
         return 1;
     }
+    
+    // Add padding bytes as needed to comply with GLTF alignment requirements
+    uint8_t padding[3] = {};
+    fwrite(padding, sizeof(uint8_t), buf_padding, glbin);
 
-	data->animations_count = anim_count;
+    data->animations_count = anim_count;
     data->animations = calloc(data->animations_count, sizeof(cgltf_animation));
     
     struct motion * motions = malloc(motion_count * sizeof(struct motion));
@@ -320,7 +328,7 @@ int main(int argc, char ** argv) {
                 accs[0].min[0] = 0.0f;
                 accs[0].has_min = true;
                 
-                accs[0].max[0] = (float)(motions[mi + 1].max_frame) / fps;
+                // accs[0].max[0] is set further down
                 accs[0].has_max = true;
                 
                 snprintf(name, sizeof(name), "Translation_%d_%d", mi, bone_id);
@@ -368,6 +376,8 @@ int main(int argc, char ** argv) {
                 
                 channel += 2;
                 
+                float time_max;
+                
                 uint32_t output_count = 0;
                 for (int fi = 0; fi < frame_count; fi++) {
                     uint16_t frame_index;
@@ -392,6 +402,11 @@ int main(int argc, char ** argv) {
                     pos[2] /= scale_factor;
 
                     float time = (float)(frame_time) / fps;
+                    if (fi) {
+                        time_max = fmax(time_max, time);
+                    } else {
+                        time_max = time;
+                    }
                     
                     if (mc) {
                         pos[0] = -pos[0];
@@ -416,6 +431,8 @@ int main(int argc, char ** argv) {
                     output_offset += animation_stride;
                     output_count++;
                 }
+                
+                accs[0].max[0] = time_max;
                 
                 for (int i = 0; i < 3; i++) {
                     accs[i].count = output_count;

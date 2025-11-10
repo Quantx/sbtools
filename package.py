@@ -397,10 +397,16 @@ def main(root_path, godot_path):
         tex_path = os.path.join(BIN_PATHS["TEXTURE"], tex)
         if ext == ".xpr":
             print("Converting texture:", tex_path)
-            args = [tool_path("sbtexture"), "-d", tex_path]
 
-            res = subprocess.run(args)
+            res = subprocess.run([tool_path("sbtexture"), "-d", tex_path])
             if res.returncode != 0: return 1
+
+    # Covert Xbox icons
+    res = subprocess.run([tool_path("sbtexture"), "-d", os.path.join(root_path, "saveimage.xpr")])
+    if res.returncode != 0: return 1
+    
+    res = subprocess.run([tool_path("sbtexture"), "-d", os.path.join(root_path, "titleimage.xpr")])
+    if res.returncode != 0: return 1
 
     # Convert Models
     for model in os.listdir(BIN_PATHS["MODEL"]):
@@ -541,6 +547,10 @@ def main(root_path, godot_path):
             print("Converting terrain:", terr_path)
             res = subprocess.run([tool_path("sbterrain"), "-u", terr_path])
             if res.returncode != 0: return 1
+        elif ext == ".raw":
+            print("Converting water bumpmap:", terr_path)
+            res = subprocess.run([tool_path("sbterrain"), "-x", terr_path])
+            if res.returncode != 0: return 1
 
     # Convert sounds
     res = subprocess.run([tool_path("sbsound"), os.path.join(SOUND_PATH, "Bank.xsb")])
@@ -642,6 +652,10 @@ def main(root_path, godot_path):
     # Extract strings
     res = subprocess.run([tool_path("sbtext"), os.path.join(XBE_PATH, ""), os.path.join(out_path, "strings.csv")])
     if res.returncode != 0: return 1
+    
+    # Copy icons
+    os.replace(os.path.join(root_path, "titleimage.dds"), os.path.join(out_path, "titleimage.dds"))
+    os.replace(os.path.join(root_path, "saveimage.dds"), os.path.join(out_path, "saveimage.dds"))
     
     # Copy all map data
     STAGE_PATH = os.path.join(root_path, "media", "StgData", "") # The Extra string forces a trailing slash
@@ -930,7 +944,7 @@ def main(root_path, godot_path):
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0109.dds"), os.path.join(effect_path, "scanlines.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0110.dds"), os.path.join(effect_path, "loading.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0111.dds"), os.path.join(effect_path, "flash.dds"))
-    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0112.dds"), os.path.join(effect_path, "palette.dds"))
+    os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0112.dds"), os.path.join(effect_path, "fresnel.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0113.dds"), os.path.join(effect_path, "controller0.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0114.dds"), os.path.join(effect_path, "controller1.dds"))
     os.replace(os.path.join(BIN_PATHS["TEXTURE"], "0132.dds"), os.path.join(effect_path, "uisheet0.dds"))
@@ -945,6 +959,12 @@ def main(root_path, godot_path):
     
     # Copy effect light data
     os.replace(os.path.join(LID_PATH, "eff.json"), os.path.join(effect_path, "point_lights.json"))
+    
+    # Copy distortion data
+    os.replace(os.path.join(XBE_PATH, "distortion.data"), os.path.join(effect_path, "distortion.data"))
+    
+    # Copy trail data
+    os.replace(os.path.join(WEAPDATA_PATH, "trail_data.json"), os.path.join(effect_path, "trail_data.json"))
     
     # Copy effect data
     effect_path_eff = os.path.join(effect_path, "eff")
@@ -977,14 +997,27 @@ def main(root_path, godot_path):
     for i in range(1216, 1236, 2):
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.gltf"),  os.path.join(effect_path, f"{i:04}.gltf"))
         os.replace(os.path.join(BIN_PATHS["MODEL"], f"{i:04}.glbin"), os.path.join(effect_path, f"{i:04}.glbin"))
-    
-    # Copy water textures
+
     water_path = os.path.join(out_path, "water")
     if not os.path.isdir(water_path):
         os.makedirs(water_path)
+    
+    # Copy water bumpmaps
+    water_bump_path = os.path.join(water_path, "bump")
+    if not os.path.isdir(water_bump_path):
+        os.makedirs(water_bump_path)
+    
+    for i in range(0, 17):
+        os.replace(os.path.join(TERRAIN_PATH, f"b{i:02}.dds"), os.path.join(water_bump_path, f"{i:02}.dds"))
+    
+    # Copy water textures
+    water_tex_path = os.path.join(water_path, "tex")
+    if not os.path.isdir(water_tex_path):
+        os.makedirs(water_tex_path)
+    
     for i in range(0, 10):
         waterid = 116 + i
-        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{waterid:04}.dds"), os.path.join(water_path, f"water{i}.dds"))
+        os.replace(os.path.join(BIN_PATHS["TEXTURE"], f"{waterid:04}.dds"), os.path.join(water_tex_path, f"{i}.dds"))
 
     # Copy Emblems
     emblem_path = os.path.join(out_path, "emblems")

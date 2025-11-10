@@ -23,6 +23,7 @@
 #define FORMAT_XBO2 0x52
 #define FORMAT_SHA  0x12
 
+#define CHECK_BIT(mask,idx) ((mask)&(1<<(idx)))
 
 char path[256];
 
@@ -38,28 +39,34 @@ struct buffer {
     uint32_t size;   // Size in bytes
 };
 
+struct vector2 {
+    float x, y;
+};
+
+struct vector3 {
+    float x, y, z;
+};
+
 struct primative {
     uint32_t offset;
     uint32_t size;
     uint32_t count;
     
-    float min[3];
-    float max[3];
+    struct vector3 min, max;
     
-    float pos[3];
-    float dir[3];
+    struct vector3 pos, dir;
 };
 
 char * progname;
 
-void euler2quat(float quat[4], float euler[3]) {
+void euler2quat(float quat[4], struct vector3 euler) {
     // Conver from Euler to Quaternion
-    double cx = cos(euler[0] * 0.5);
-    double sx = sin(euler[0] * 0.5);
-    double cy = cos(euler[1] * 0.5);
-    double sy = sin(euler[1] * 0.5);
-    double cz = cos(euler[2] * 0.5);
-    double sz = sin(euler[2] * 0.5);
+    double cx = cos(euler.x * 0.5);
+    double sx = sin(euler.x * 0.5);
+    double cy = cos(euler.y * 0.5);
+    double sy = sin(euler.y * 0.5);
+    double cz = cos(euler.z * 0.5);
+    double sz = sin(euler.z * 0.5);
     
     quat[0] = sx * cy * cz - cx * sy * sz; // X
     quat[1] = cx * sy * cz + sx * cy * sz; // Y
@@ -154,18 +161,18 @@ int main(int argc, char ** argv) {
     uint8_t * node_parents = malloc(node_count * sizeof(uint8_t));
     fread(node_parents, sizeof(uint8_t), node_count, sbmdl);
     
-    float global_pos[3];
-    fread(global_pos, sizeof(float), 3, sbmdl);
-    float global_dir[3];
-    fread(global_dir, sizeof(float), 3, sbmdl);
+    struct vector3 global_pos;
+    fread(&global_pos, sizeof(struct vector3), 1, sbmdl);
+    struct vector3 global_dir;
+    fread(&global_dir, sizeof(struct vector3), 1, sbmdl);
     
-    global_pos[0] *= scale_factor;
-    global_pos[1] *= scale_factor;
-    global_pos[2] *= scale_factor;
+    global_pos.x *= scale_factor;
+    global_pos.y *= scale_factor;
+    global_pos.z *= scale_factor;
     
     printf("Global POS(%f, %f, %f), DIR(%f, %f, %f)\n",
-        global_pos[0], global_pos[1], global_pos[2],
-        global_dir[0], global_dir[1], global_dir[2]);
+        global_pos.x, global_pos.y, global_pos.z,
+        global_dir.x, global_dir.y, global_dir.z);
     
     // Replace file extension
     char * ext = strrchr(path, '.') + 1;
@@ -186,12 +193,15 @@ int main(int argc, char ** argv) {
         
         verts_out[mi].offset = mi ? verts_out[mi - 1].offset + verts_out[mi - 1].size : 0;
 
-        float pos[3];
-        fread(pos, sizeof(float), 3, sbmdl);
-        float dir[3];
-        fread(dir, sizeof(float), 3, sbmdl);
+        struct vector3 pos;
+        fread(&pos, sizeof(struct vector3), 1, sbmdl);
+        struct vector3 dir;
+        fread(&dir, sizeof(struct vector3), 1, sbmdl);
         
-        printf("Mesh %d POS(%f, %f, %f), DIR(%f, %f, %f)\n", mi, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2]);
+        printf("Mesh %d POS(%f, %f, %f), DIR(%f, %f, %f)\n",
+            mi,
+            pos.x, pos.y, pos.z,
+            dir.x, dir.y, dir.z);
         
         // Validate mesh format
         int32_t format;
@@ -205,65 +215,102 @@ int main(int argc, char ** argv) {
         int32_t mesh_size;
         fread(&mesh_size, sizeof(uint32_t), 1, sbmdl);
         
-        if (mesh_size != verts_in[mi].size - 48) printf("mesh_size mismatch, %d %d\n", mesh_size, verts_in[mi].size - 48);
+        if (mesh_size != verts_in[mi].size - 48) {
+            fprintf(stderr, "mesh_size mismatch, %d %d\n", mesh_size, verts_in[mi].size - 48);
+            return 1;
+        }
         
         // Valide mesh magic
         fread(&magic, sizeof(uint32_t), 1, sbmdl);
-        if (magic != 6) printf("Mesh %d magic2 was %08X instead of 0x6\n", mi, magic);  
+        if (magic != 6) {
+            fprintf(stderr, "Mesh %d magic2 was %08X instead of 0x6\n", mi, magic);
+            return 1;
+        }
         
-        // Read mesh attributes
-        int16_t attrs[4];
-        fread(attrs, sizeof(int16_t), 4, sbmdl);
-        printf("Mesh attributes: %d, %d, %d, %d\n", attrs[0], attrs[1], attrs[2], attrs[3]);
+        uint16_t mesh_header_size;
+        fread(&mesh_header_size, sizeof(uint16_t), 1, sbmdl);
+        if (mesh_header_size != 48) {
+            fprintf(stderr, "Expected mesh header size of 48, got: %u\n", mesh_header_size);
+            return 1;
+        }
         
-        // Read vertex length
-        uint32_t vert_size;
-        fread(&vert_size, sizeof(uint32_t), 1, sbmdl);
+        // triangle_count is functionally the number of indices + 2 due to the nature of triangle strips
+        uint16_t triangle_count;
+        fread(&triangle_count, sizeof(int16_t), 1, sbmdl);
         
-        vert_size &= 0xFFu; // Fix a bug with vertex sizes
+        uint16_t vert_count;
+        fread(&vert_count, sizeof(uint16_t), 1, sbmdl);
+        
+        uint8_t byteAttrs[2];
+        fread(byteAttrs, sizeof(uint8_t), 2, sbmdl);
+        
+        printf("Mesh attributes: %u, %u\n", byteAttrs[0], byteAttrs[1]);
+        
+        uint8_t vert_size;
+        fread(&vert_size, sizeof(uint8_t), 1, sbmdl);
+        
+        uint8_t unk_format;
+        fread(&unk_format, sizeof(uint8_t), 1, sbmdl);
+        
+        uint16_t unk_data;
+        fread(&unk_data, sizeof(uint16_t), 1, sbmdl);
+        
+        if (unk_format == 1) {
+            printf("unk_format 1, data = %u\n", unk_data);
+        } else if (unk_format == 3) {
+            struct vector3 unk_vec3;
+            unk_vec3.x = (float)((unk_data & 0x7C00) >> 10) / 31.0;
+            unk_vec3.y = (float)((unk_data & 0x3E0) >> 5) / 31.0;
+            unk_vec3.z = (float)(unk_data & 0x1F) / 31.0;
+        
+            printf("unk_format 3, data = (%f, %f, %f)\n", unk_vec3.x, unk_vec3.y, unk_vec3.z);
+        } else if (unk_format) {
+            fprintf(stderr, "Invalid unk_foramt %u\n", unk_format);
+            return 1;
+        }
 
         bool is_floats = false;
         if (format == FORMAT_XBO) {
-            printf("Format is XBO at %08lX\n", ftell(sbmdl) - 24);
             if (vert_size == 26) is_floats = true;
             else if (vert_size != 20) printf("Format XBO does not have vert_size of 20, vert_size == %d\n", vert_size);
+            
+            printf("Format is XBO%s at %08lX\n", is_floats ? "_FLOAT" : "", ftell(sbmdl) - 24);
         } else if (format == FORMAT_XBO2) {
-            printf("Format is XBO2 at %08lX\n", ftell(sbmdl) - 24);
             if (vert_size == 22) is_floats = true;
             else if (vert_size != 16) printf("Format XBO2 does not have vert_size of 16, vert_size == %d\n", vert_size);
+            
+            printf("Format is XBO2%s at %08lX\n", is_floats ? "_FLOAT" : "", ftell(sbmdl) - 24);
         } else if (format == FORMAT_SHA) {
-            printf("Format is SHA at %08lX\n", ftell(sbmdl) - 24);
             if (vert_size != 12) printf("Format SHA does not have vert_size of 12, vert_size == %d\n", vert_size);
+            printf("Format is SHA at %08lX\n", ftell(sbmdl) - 24);
         }
         
         if (!is_floats) {
-            pos[0] *= scale_factor;
-            pos[1] *= scale_factor;
-            pos[2] *= scale_factor;
+            pos.x *= scale_factor;
+            pos.y *= scale_factor;
+            pos.z *= scale_factor;
         }
         
-        verts_out[mi].pos[0] = pos[0];
-        verts_out[mi].pos[1] = pos[1];
-        verts_out[mi].pos[2] = pos[2];
+        verts_out[mi].pos.x = pos.x;
+        verts_out[mi].pos.y = pos.y;
+        verts_out[mi].pos.z = pos.z;
         
-        verts_out[mi].dir[0] = dir[0];
-        verts_out[mi].dir[1] = dir[1];
-        verts_out[mi].dir[2] = dir[2];
+        verts_out[mi].dir.x = dir.x;
+        verts_out[mi].dir.y = dir.y;
+        verts_out[mi].dir.z = dir.z;
         
-        int32_t verts = mesh_size;
-        
-        if (verts % vert_size) {
-            fprintf(stderr, "%d verts, %d vert_size, remainder %d\n", verts, vert_size, verts % vert_size);
+        if (vert_count * vert_size != mesh_size) {
+            fprintf(stderr, "%d verts * %d vert_size != mesh_size %d\n", vert_count, vert_size, mesh_size);
+            return 1;
         }
-        verts /= vert_size;
 
-        verts_out[mi].count = verts;
-        verts_out[mi].size = verts * verts_stride;
+        verts_out[mi].count = vert_count;
+        verts_out[mi].size = vert_count * verts_stride;
         
-        printf("Reading %d vertices\n", verts);
+        printf("Reading %d vertices for %d triangles\n", vert_count, triangle_count);
 
         // Vertex data
-        for (int vi = 0; vi < verts; vi++) {
+        for (int vi = 0; vi < vert_count; vi++) {
             float vp[3];
             if (is_floats) {
                 fread(vp, sizeof(float), 3, sbmdl);
@@ -279,17 +326,17 @@ int main(int argc, char ** argv) {
             fwrite(vp, sizeof(float), 3, outf);
 
             if (!vi) {
-                verts_out[mi].max[0] = verts_out[mi].min[0] = vp[0];
-                verts_out[mi].max[1] = verts_out[mi].min[1] = vp[1];
-                verts_out[mi].max[2] = verts_out[mi].min[2] = vp[2];
+                verts_out[mi].max.x = verts_out[mi].min.x = vp[0];
+                verts_out[mi].max.y = verts_out[mi].min.y = vp[1];
+                verts_out[mi].max.z = verts_out[mi].min.z = vp[2];
             } else {
-                verts_out[mi].min[0] = fminf(verts_out[mi].min[0], vp[0]);
-                verts_out[mi].min[1] = fminf(verts_out[mi].min[1], vp[1]);
-                verts_out[mi].min[2] = fminf(verts_out[mi].min[2], vp[2]);
+                verts_out[mi].min.x = fminf(verts_out[mi].min.x, vp[0]);
+                verts_out[mi].min.y = fminf(verts_out[mi].min.y, vp[1]);
+                verts_out[mi].min.z = fminf(verts_out[mi].min.z, vp[2]);
                 
-                verts_out[mi].max[0] = fmaxf(verts_out[mi].max[0], vp[0]);
-                verts_out[mi].max[1] = fmaxf(verts_out[mi].max[1], vp[1]);
-                verts_out[mi].max[2] = fmaxf(verts_out[mi].max[2], vp[2]);
+                verts_out[mi].max.x = fmaxf(verts_out[mi].max.x, vp[0]);
+                verts_out[mi].max.y = fmaxf(verts_out[mi].max.y, vp[1]);
+                verts_out[mi].max.z = fmaxf(verts_out[mi].max.z, vp[2]);
             }
 
             // Read vertex normals
@@ -344,30 +391,71 @@ int main(int argc, char ** argv) {
     }
     
     if (extra) {
-        // Extra data would be processed here    
+        fseek(sbmdl, MODEL_HEADER_OFFSET + extra, SEEK_SET);
+        
+        uint16_t extra_count;
+        fread(&extra_count, sizeof(uint16_t), 1, sbmdl);
+        
+        fseek(sbmdl, 12, SEEK_CUR); // Skip offsets
+        
+        printf("Processing %u extra data entries at %08X\n", extra_count, MODEL_HEADER_OFFSET + extra);
+        
+        uint8_t nodes[extra_count * 3];
+        fread(nodes, sizeof(uint8_t), extra_count * 3, sbmdl);
+        
+        struct vector2 vec2s[extra_count];
+        fread(vec2s, sizeof(struct vector2), extra_count, sbmdl);
+        
+        struct vector3 vec3sA[extra_count];
+        fread(vec3sA, sizeof(struct vector3), extra_count, sbmdl);
+        
+        struct vector3 vec3sB[extra_count];
+        fread(vec3sB, sizeof(struct vector3), extra_count, sbmdl);
+        
+        struct vector3 vec3sC[extra_count];
+        fread(vec3sC, sizeof(struct vector3), extra_count, sbmdl);
+        
+        for (int xi = 0; xi < extra_count; xi++) {
+            uint8_t * nd = nodes + xi * 3;
+            printf("Extra nodes: %u %u %u\n", nd[0], nd[1], nd[2]);
+            
+            printf("Extra vec2: (%f, %f)\n", vec2s[xi].x, vec2s[xi].y);
+            
+            printf("Extra vec3A: (%f, %f, %f)\n", vec3sA[xi].x, vec3sA[xi].y, vec3sA[xi].z);
+            printf("Extra vec3B: (%f, %f, %f)\n", vec3sB[xi].x, vec3sB[xi].y, vec3sB[xi].z);
+            printf("Extra vec3C: (%f, %f, %f)\n", vec3sC[xi].x, vec3sC[xi].y, vec3sB[xi].z);
+        }
     }
 
     uint32_t node_special_count = 0;
-    uint8_t * node_special;
+    uint32_t node_special_flags = 0;
+    uint8_t node_special[32];
     if (nodespecial_section.size) {
         fseek(sbmdl, nodespecial_section.offset, SEEK_SET);
 
         fread(&node_special_count, sizeof(uint32_t), 1, sbmdl);
+        fread(&node_special_flags, sizeof(uint32_t), 1, sbmdl);
         
-        fseek(sbmdl, nodespecial_section.offset + nodespecial_section.size - node_special_count, SEEK_SET);
+        printf("Special node enabled flags: %08X\n", node_special_flags);
+        printf("Read %d special node IDs:", node_special_count);
         
-        if (node_special_count) {
-            node_special = malloc(node_special_count * sizeof(uint8_t));
-            fread(node_special, sizeof(uint8_t), node_special_count, sbmdl);
+        for (int ni = 0, nr = 0; ni < 32; ni++) {
+            if (CHECK_BIT(node_special_flags, ni)) {
+                if (nr >= node_special_count) {
+                    fprintf(stderr, "Special node enable flag bits do not match count\n");
+                    return 1;
+                }
+                nr++;
+                
+                fread(node_special + ni, sizeof(uint8_t), 1, sbmdl);
+                printf(" %02d", node_special[ni]);
+            } else {
+                printf(" XX");
+            }
         }
-
-        printf("Read %d special node IDs:", node_special_count);        
-        for (int ni = 0; ni < node_special_count; ni++) {
-            printf(" %d", node_special[ni]);
-        }
+        
         printf("\n");
     }
-    
     
     uint8_t * mirror_ids = NULL;
     if (nodemirror_section.size) {
@@ -396,10 +484,14 @@ int main(int argc, char ** argv) {
         printf("\n");
     }
     
+    /*
     if (ftell(sbmdl) != index_section.offset) {
         fprintf(stderr, "Index section mismatch %08lX %08X\n", ftell(sbmdl), index_section.offset);
         return 1;
     }
+    */
+    
+    fseek(sbmdl, index_section.offset, SEEK_SET);
     
     // Read Index Data Header
     struct buffer * inds_in = malloc(mesh_count * sizeof(struct buffer));
@@ -508,13 +600,15 @@ int main(int argc, char ** argv) {
     scene->nodes = calloc(scene->nodes_count, sizeof(cgltf_node *));
     scene->nodes[0] = data.nodes;
     
+    printf("Generating GLTF and GLBIN files\n");
+    
     for (int ni = 0; ni < node_count; ni++) {
         cgltf_node * node = data.nodes + ni;
 
         int mirror_id = mirror_ids ? mirror_ids[ni] : ni;
         int special_id = -1;
-        for (int nsi = 0; nsi < node_special_count; nsi++) {
-            if (node_special[nsi] == ni) {
+        for (int nsi = 0; nsi < 32; nsi++) {
+            if (CHECK_BIT(node_special_flags, nsi) && node_special[nsi] == ni) {
                 special_id = nsi;
                 break;
             }
@@ -544,9 +638,9 @@ int main(int argc, char ** argv) {
             node->mesh = mesh;
             node->skin = skin;
 
-            node->translation[0] = global_pos[0];
-            node->translation[1] = global_pos[1];
-            node->translation[2] = global_pos[2];
+            node->translation[0] = global_pos.x;
+            node->translation[1] = global_pos.y;
+            node->translation[2] = global_pos.z;
             node->has_translation = true;
             
             euler2quat(node->rotation, global_dir);
@@ -557,9 +651,9 @@ int main(int argc, char ** argv) {
         } else {
             int mi = ni - 1;
 
-            node->translation[0] = verts_out[mi].pos[0];
-            node->translation[1] = verts_out[mi].pos[1];
-            node->translation[2] = verts_out[mi].pos[2];
+            node->translation[0] = verts_out[mi].pos.x;
+            node->translation[1] = verts_out[mi].pos.y;
+            node->translation[2] = verts_out[mi].pos.z;
             node->has_translation = true;
             
             euler2quat(node->rotation, verts_out[mi].dir);
@@ -649,14 +743,14 @@ int main(int argc, char ** argv) {
         pos_acc->component_type = cgltf_component_type_r_32f;
         pos_acc->type = cgltf_type_vec3;
         
-        pos_acc->min[0] = verts_out[mi].min[0];
-        pos_acc->min[1] = verts_out[mi].min[1];
-        pos_acc->min[2] = verts_out[mi].min[2];
+        pos_acc->min[0] = verts_out[mi].min.x;
+        pos_acc->min[1] = verts_out[mi].min.y;
+        pos_acc->min[2] = verts_out[mi].min.z;
         pos_acc->has_min = true;
         
-        pos_acc->max[0] = verts_out[mi].max[0];
-        pos_acc->max[1] = verts_out[mi].max[1];
-        pos_acc->max[2] = verts_out[mi].max[2];
+        pos_acc->max[0] = verts_out[mi].max.x;
+        pos_acc->max[1] = verts_out[mi].max.y;
+        pos_acc->max[2] = verts_out[mi].max.z;
         pos_acc->has_max = true;
         
         cgltf_accessor * norm_acc = data.accessors + accessor_pos + 1;

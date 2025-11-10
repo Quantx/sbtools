@@ -61,7 +61,7 @@ int main(int argc, char ** argv) {
     printf("SB Shader Tool - By QuantX\n");
 
     if (!argc) {
-        fprintf(stderr, "Please specify a cockpit file: %s <path/cockpit_file>\n", progname);
+        fprintf(stderr, "Please specify the data segment file: %s <path/.data.seg>\n", progname);
         return 1;
     }
     
@@ -94,7 +94,7 @@ int main(int argc, char ** argv) {
     }
     
     uint32_t vertexShaderPointers[VERTEX_SHADER_COUNT];
-    fseek(datf, 0xADE0, SEEK_SET); // Brainbox offset
+    fseek(datf, 0xAF00, SEEK_SET); // Brainbox offset
     fread(vertexShaderPointers, sizeof(uint32_t), VERTEX_SHADER_COUNT, datf);
     
     for (int i = 0; i < VERTEX_SHADER_COUNT; i++) {

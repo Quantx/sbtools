@@ -60,8 +60,8 @@ struct __attribute__((__packed__)) weapon_data {
     uint16_t id;
     uint16_t life;
     float initial_velocity;
-    float max_speed;
-    float acceleration;
+    float boost_max;
+    float boost_rate;
     float gravity_acceleration;
     float torso_turn_rate;
     float damage_type_range;
@@ -108,6 +108,16 @@ struct __attribute__((__packed__)) smoke_data {
     float start_size;
     float end_size;
     uint32_t flags;
+    uint32_t padding[8];
+};
+
+struct __attribute__((__packed__)) tracer_data {
+    uint8_t color_start_a;
+    uint8_t color_start_r;
+    uint8_t color_start_g;
+    uint8_t color_start_b;
+    int print_max;
+    float start_size;
     uint32_t padding[8];
 };
 
@@ -296,8 +306,8 @@ int main(int argc, char ** argv) {
             jwObj_string("name", name);
             jwObj_int("life", wep.life);            
             jwObj_double("initial_velocity", wep.initial_velocity);
-            jwObj_double("max_speed", wep.max_speed);
-            jwObj_double("acceleration", wep.acceleration);
+            jwObj_double("boost_max", wep.boost_max);
+            jwObj_double("boost_rate", wep.boost_rate);
             jwObj_double("gravity_acceleration", wep.gravity_acceleration);
             jwObj_double("torso_turn_rate", wep.torso_turn_rate);
             jwObj_double("damage_type_range", wep.damage_type_range);
@@ -352,6 +362,27 @@ int main(int argc, char ** argv) {
         jwEnd();
     }
     
+    int jw_err = jwClose();
+    if (jw_err) {
+        fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
+        fclose(outf);
+        return 1;
+    }
+    
+    fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+    fclose(outf);
+    
+    if (sep) strcpy(sep + 1, "trail_data.json");
+    else strcpy(out_path, "trail_data.json");
+    
+    outf = fopen(out_path, "w");
+    if (!outf) {
+        fprintf(stderr, "failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    jwOpen(json_buffer, sizeof(json_buffer), JW_OBJECT, JW_PRETTY);
+    
     uint32_t smoke_type_count;
     fread(&smoke_type_count, sizeof(uint32_t), 1, wdat);
     
@@ -359,9 +390,11 @@ int main(int argc, char ** argv) {
     fread(smoke_type_sizes, sizeof(uint32_t), smoke_type_count, wdat);
     
     jwObj_array("smoke");
-    for (uint32_t sm = 0; sm < 10; sm++) {
+    for (uint32_t sm = 0; sm < 20; sm++) {
         struct smoke_data smk;
         fread(&smk, sizeof(struct smoke_data), 1, wdat);
+        
+        if (!smk.print_max) continue; // Skip empty entries
         
         jwArr_object();
         jwObj_array("color_start");
@@ -381,6 +414,7 @@ int main(int argc, char ** argv) {
         jwObj_int("print_max", smk.print_max);
         jwObj_double("start_size", smk.start_size);
         jwObj_double("end_size", smk.end_size);
+        jwObj_int("flags", smk.flags);
         
         for (int i = 0; i < 8; i++) {
             if (smk.padding[i]) {
@@ -392,11 +426,53 @@ int main(int argc, char ** argv) {
     }
     jwEnd();
     
+    jwObj_array("tracer");
+    for (uint32_t tr = 0; tr < 20; tr++) {
+        struct tracer_data tracer;
+        fread(&tracer, sizeof(struct tracer_data), 1, wdat);
+        
+        if (!tracer.print_max) continue; // Skip empty entries
+        
+        jwArr_object();
+        jwObj_array("color_start");
+            jwArr_int(tracer.color_start_r);
+            jwArr_int(tracer.color_start_g);
+            jwArr_int(tracer.color_start_b);
+            jwArr_int(tracer.color_start_a);
+        jwEnd();
+        
+        jwObj_int("print_max", tracer.print_max);
+        jwObj_double("start_size", tracer.start_size);
+        
+        for (int i = 0; i < 8; i++) {
+            if (tracer.padding[i]) {
+                fprintf(stderr, "PADDING AT %d:%d WAS NON ZERO: %08X\n", tr, i, tracer.padding[i]);
+                return 1;
+            }
+        }
+        jwEnd();
+    }
+    
+    // Manually add the last entry
+    jwArr_object();
+      jwObj_array("color_start");
+          jwArr_int(0xFF);
+          jwArr_int(0xC0);
+          jwArr_int(0x80);
+          jwArr_int(0xFF);
+      jwEnd();
+      
+      jwObj_int("print_max", 4);
+      jwObj_double("start_size", 35.0);
+    jwEnd();
+    
+    jwEnd();
+    
     fclose(wdat);
     fclose(datf);
     fclose(rdatf);
     
-    int jw_err = jwClose();
+    jw_err = jwClose();
     if (jw_err) {
         fprintf(stderr, "JSON writer error: %s\n", jwErrorToString(jw_err));
         fclose(outf);

@@ -33,9 +33,9 @@ $(ODIR)/sbmotion $(ODIR)/sbmotion.exe: $(SDIR)/sbmotion.c
 $(ODIR)/sbshader $(ODIR)/sbshader.exe: $(SDIR)/sbshader.c
 $(ODIR)/sbsound $(ODIR)/sbsound.exe: $(SDIR)/sbsound.c $(LDIR)/jWrite.c
 $(ODIR)/sbstage $(ODIR)/sbstage.exe: $(SDIR)/sbstage.c $(LDIR)/jWrite.c
-$(ODIR)/sbterrain $(ODIR)/sbterrain.exe: $(SDIR)/sbterrain.c
+$(ODIR)/sbterrain $(ODIR)/sbterrain.exe: $(SDIR)/sbterrain.c $(LDIR)/swizzle.c
 $(ODIR)/sbtext $(ODIR)/sbtext.exe: $(SDIR)/sbtext.c
-$(ODIR)/sbtexture $(ODIR)/sbtexture.exe: $(SDIR)/sbtexture.c
+$(ODIR)/sbtexture $(ODIR)/sbtexture.exe: $(SDIR)/sbtexture.c $(LDIR)/swizzle.c
 $(ODIR)/sbweapon $(ODIR)/sbweapon.exe: $(SDIR)/sbweapon.c $(LDIR)/jWrite.c
 
 $(ODIR):

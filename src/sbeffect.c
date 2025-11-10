@@ -24,6 +24,10 @@ struct file_entry {
     uint32_t length;
 } __attribute__((packed));
 
+struct vector2 {
+    float x, y;
+} __attribute__((packed));
+
 struct vector3 {
     float x, y, z;
 } __attribute__((packed));
@@ -591,6 +595,10 @@ int unpackSEG(char * path) {
     // Fixup the overlapping data
     for (int i = 0; i < 9; i++) collisionEffects[0][i] = 0;
     
+    static struct vector2 distortionEffects[8][18];
+    fseek(datf, 0x109C0, SEEK_SET);
+    fread(distortionEffects, sizeof(struct vector2), 8 * 18, datf);
+    
     fclose(datf);
     
     jwObj_array("mechs");
@@ -707,6 +715,19 @@ int unpackSEG(char * path) {
     }
     
     fwrite(json_buffer, sizeof(char), strlen(json_buffer), outf);
+    
+    fclose(outf);
+    
+    if (sep) strcpy(sep + 1, "distortion.data");
+    else strcpy(out_path, "distortion.data");
+    
+    outf = fopen(out_path, "wb");
+    if (!outf) {
+        fprintf(stderr, "Failed to open output file: %s\n", out_path);
+        return 1;
+    }
+    
+    fwrite(distortionEffects, sizeof(struct vector2), 8 * 18, outf);
     
     fclose(outf);
 }

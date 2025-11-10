@@ -6,6 +6,8 @@
 
 #include "dds.h"
 
+#include "swizzle.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -18,7 +20,7 @@
 #define DXT_GET_B(COLOR) ((COLOR & (0x001F << 11)) >> 11)
 
 #define FORMAT_DIMENSIONS(FORMAT_INFO) ((FORMAT_INFO & 0x00F0) >> 4)
-#define FORMAT_COLOR(FORMAT_INFO) ((FORMAT_INFO & 0xFF00) >> 8)
+#define FORMAT_TYPE(FORMAT_INFO) ((FORMAT_INFO & 0xFF00) >> 8)
 
 #define FORMAT_LEVELS(FORMAT_DATA) (FORMAT_DATA & 0x000F)
 #define FORMAT_WIDTH(FORMAT_DATA)  (1 << ((FORMAT_DATA & 0x00F0) >>  4))
@@ -29,10 +31,10 @@
 #define FORMAT_MISC_HEIGHT(FORMAT_MISC) (((FORMAT_MISC & 0x00FFF000) >> 12) + 1)
 #define FORMAT_MISC_DEPTH(FORMAT_MISC)  (((FORMAT_MISC & 0xFF000000) >> 24) + 1)
 
-#define FORMAT_ARGB2 0x06
-#define FORMAT_DXT1  0x0C
-#define FORMAT_DXT3  0x0E
-#define FORMAT_ARGB  0x12
+#define FORMAT_ARGB     0x06
+#define FORMAT_DXT1     0x0C
+#define FORMAT_DXT3     0x0E
+#define FORMAT_LIN_ARGB 0x12
 
 char * progname;
 bool objtex_patch;
@@ -196,7 +198,7 @@ void objtex_blit(uint8_t * img_data, int width, int height, int src_x, int src_y
     }
 }
 
-int readXPRHeader(FILE * xprf, uint32_t * data_start, uint32_t * data_size, uint8_t * color, uint16_t * width, uint16_t * height, uint16_t * levels) {
+int readXPRHeader(FILE * xprf, uint32_t * data_start, uint32_t * data_size, uint8_t * format, uint16_t * width, uint16_t * height, uint16_t * levels) {
     if (!xprf) return 1;
     
     // Verify file format
@@ -244,16 +246,16 @@ int readXPRHeader(FILE * xprf, uint32_t * data_start, uint32_t * data_size, uint
     uint32_t format_misc;
     fread(&format_misc, sizeof(uint32_t), 1, xprf);
     
-    *color = FORMAT_COLOR(format_info);
+    *format = FORMAT_TYPE(format_info);
     
     char * format_str;
-    if (*color == FORMAT_DXT1)  format_str = "DXT1";
-    else if (*color == FORMAT_DXT3) format_str = "DXT3";
-    else if (*color == FORMAT_ARGB) format_str = "RGBA";
+    if (*format == FORMAT_DXT1)  format_str = "DXT1";
+    else if (*format == FORMAT_DXT3) format_str = "DXT3";
+    else if (*format == FORMAT_LIN_ARGB) format_str = "RGBA";
+    else if (*format == FORMAT_ARGB) format_str = "RGBA_SWIZZLE";
     else {
-        // Not considering this an error
-        fprintf(stderr, "Unknown texture format %02X for file\n", *color);
-        return -1;
+        fprintf(stderr, "Unknown texture format %02X for file\n", *format);
+        return 1;
     }
     
     uint16_t dimensions = FORMAT_DIMENSIONS(format_info);
@@ -267,7 +269,7 @@ int readXPRHeader(FILE * xprf, uint32_t * data_start, uint32_t * data_size, uint
     uint16_t depth  = FORMAT_DEPTH(format_data);
     *levels = FORMAT_LEVELS(format_data);
     
-    if (*color == FORMAT_ARGB) {
+    if (*format == FORMAT_LIN_ARGB) {
         *width = FORMAT_MISC_WIDTH(format_misc);
         *height = FORMAT_MISC_HEIGHT(format_misc);
         depth = FORMAT_MISC_DEPTH(format_misc);
@@ -275,9 +277,9 @@ int readXPRHeader(FILE * xprf, uint32_t * data_start, uint32_t * data_size, uint
     
     printf("Format: %s, Width: %d, Height: %d, Depth %d, Levels: %d\n", format_str, *width, *height, depth, *levels);
     
-    if (*color == FORMAT_DXT1) *data_size = (*width * *height) / 2;
-    else if (*color == FORMAT_DXT3) *data_size = *width * *height;
-    else if (*color == FORMAT_ARGB) *data_size = *width * *height * 4;
+    if (*format == FORMAT_DXT1) *data_size = (*width * *height) / 2;
+    else if (*format == FORMAT_DXT3) *data_size = *width * *height;
+    else if (*format == FORMAT_LIN_ARGB || *format == FORMAT_ARGB) *data_size = *width * *height * 4;
     
     if (*data_size + *data_start > file_size) {
         fprintf(stderr, "Computed data size %d exceeds file size %d\n", *data_size + *data_start, file_size);
@@ -301,8 +303,8 @@ int makeTGA(char * path) {
 
     uint32_t data_start, dxt_data_size;
     uint16_t width, height, levels;
-    uint8_t color;
-    int xpr_res = readXPRHeader(sbtex, &data_start, &dxt_data_size, &color, &width, &height, &levels);
+    uint8_t format;
+    int xpr_res = readXPRHeader(sbtex, &data_start, &dxt_data_size, &format, &width, &height, &levels);
     if (xpr_res) {
         fclose(sbtex);
         return xpr_res > 0 ? xpr_res : 0;
@@ -327,13 +329,13 @@ int makeTGA(char * path) {
     while (dxt_pos < dxt_data_size) {
         uint8_t rgba[64];
         
-        if (color == FORMAT_DXT1) {
+        if (format == FORMAT_DXT1) {
             dxt1_decode((struct dxt1_block *)(dxt_data + dxt_pos), rgba, 1);
             dxt_pos += sizeof(struct dxt1_block);
-        } else if (color == FORMAT_DXT3) {
+        } else if (format == FORMAT_DXT3) {
             dxt3_decode((struct dxt3_block *)(dxt_data + dxt_pos), rgba);
             dxt_pos += sizeof(struct dxt3_block);
-        } else if (color == FORMAT_ARGB) {
+        } else if (format == FORMAT_LIN_ARGB || format == FORMAT_ARGB) {
             out_data[dxt_pos] = ((uint8_t *)dxt_data)[dxt_pos];
             dxt_pos++;
             continue;
@@ -411,8 +413,8 @@ int makeXPR(char * path) {
     
     uint32_t data_start, data_size;
     uint16_t xpr_width, xpr_height, xpr_levels;
-    uint8_t color;
-    int xpr_res = readXPRHeader(sbtex, &data_start, &data_size, &color, &xpr_width, &xpr_height, &xpr_levels);
+    uint8_t format;
+    int xpr_res = readXPRHeader(sbtex, &data_start, &data_size, &format, &xpr_width, &xpr_height, &xpr_levels);
     if (xpr_res) {
         fclose(sbtex);
         stbi_image_free(img);
@@ -432,7 +434,7 @@ int makeXPR(char * path) {
     fseek(sbtex, data_start, SEEK_SET);
     
     // RGBA doesn't have mipmaps, just write the data and finish
-    if (color == FORMAT_ARGB) {
+    if (format == FORMAT_LIN_ARGB) {
         fwrite(img, sizeof(uint8_t), data_size, sbtex);
         fclose(sbtex);
         stbi_image_free(img);
@@ -466,13 +468,13 @@ int makeXPR(char * path) {
                 by += 4;
             }
             
-            if (color == FORMAT_DXT1) {
+            if (format == FORMAT_DXT1) {
                 struct dxt1_block dxt1 = {0};
                 dxt1_encode(&dxt1, rgba);
                 fwrite(&dxt1, sizeof(struct dxt1_block), 1, sbtex);
                 
                 data_pos += sizeof(struct dxt1_block);
-            } else if (color == FORMAT_DXT3) {
+            } else if (format == FORMAT_DXT3) {
                 struct dxt3_block dxt3 = {0};
                 dxt3_encode(&dxt3, rgba);
                 fwrite(&dxt3, sizeof(struct dxt3_block), 1, sbtex);
@@ -539,8 +541,8 @@ int makeXPR(char * path) {
             
             img = mipmap;
             
-            if (color == FORMAT_DXT1) data_size = (width * height) / 2;
-            else if (color == FORMAT_DXT3) data_size = width * height;
+            if (format == FORMAT_DXT1) data_size = (width * height) / 2;
+            else if (format == FORMAT_DXT3) data_size = width * height;
         }
     }
     
@@ -621,7 +623,7 @@ int makeDDS(char * path) {
     uint16_t xpr_info;
     fread(&xpr_info, sizeof(uint16_t), 1, xpr);
     
-    uint16_t xpr_color = FORMAT_COLOR(xpr_info);
+    uint16_t xpr_format = FORMAT_TYPE(xpr_info);
     if (FORMAT_DIMENSIONS(xpr_info) != 2) {
         fclose(xpr);
         fprintf(stderr, "XPR isn't 2 dimensional\n");
@@ -660,11 +662,11 @@ int makeDDS(char * path) {
     uint32_t block_w;
     uint32_t block_h;
     
-    if (xpr_color == FORMAT_ARGB || xpr_color == FORMAT_ARGB2) {
+    if (xpr_format == FORMAT_LIN_ARGB || xpr_format == FORMAT_ARGB) {
         header.flags |= 0x8; // Uncompressed texture pitch
         header.format.flags |= 0x1 | 0x40; // Alpha Channel | Uncompressed Texture
     
-        if (xpr_color == FORMAT_ARGB) {
+        if (xpr_format == FORMAT_LIN_ARGB) {
             header.height = FORMAT_MISC_HEIGHT(xpr_misc);
             header.width = FORMAT_MISC_WIDTH(xpr_misc);
             header.depth = FORMAT_MISC_DEPTH(xpr_misc);
@@ -685,7 +687,7 @@ int makeDDS(char * path) {
         header.format.rBitMask = 0x00ff0000;
         header.format.gBitMask = 0x0000ff00;
         header.format.bBitMask = 0x000000ff;
-    } else if (xpr_color == FORMAT_DXT1 || xpr_color == FORMAT_DXT3) {
+    } else if (xpr_format == FORMAT_DXT1 || xpr_format == FORMAT_DXT3) {
         header.flags |= 0x80000; // Compressed texture linear size
         header.format.flags |= 0x4; // Compressed Texture
         
@@ -701,7 +703,7 @@ int makeDDS(char * path) {
         // DXT1 will be converted to DXT3
         memcpy(header.format.codeStr, "DXT3", 4);
     } else {
-        fprintf(stderr, "Unknown XPR image format: %02X\n", xpr_color);
+        fprintf(stderr, "Unknown XPR image format: %02X\n", xpr_format);
         fclose(xpr);
         fclose(dds);
         return 1;
@@ -725,11 +727,11 @@ int makeDDS(char * path) {
     uint32_t level_h = block_h;
     while (true) {
         uint32_t level_size;
-        if (xpr_color == FORMAT_ARGB || xpr_color == FORMAT_ARGB2) {
+        if (xpr_format == FORMAT_LIN_ARGB || xpr_format == FORMAT_ARGB) {
             level_size = level_w * level_h * 4;
-        } else if (xpr_color == FORMAT_DXT1) {
+        } else if (xpr_format == FORMAT_DXT1) {
             level_size = level_w * level_h * 8;
-        } else if (xpr_color == FORMAT_DXT3) {
+        } else if (xpr_format == FORMAT_DXT3) {
             level_size = level_w * level_h * 16;
         }
 
@@ -748,7 +750,7 @@ int makeDDS(char * path) {
         printf("Not enough data to satisfy all mipmap sizes for %dx%d, claimed %d, actual %d\n", header.width, header.height, header.levels, levels);
         
         // Disable mipmaps for this texture
-        if (xpr_color == FORMAT_DXT1) data_size = block_w * block_h * 8;
+        if (xpr_format == FORMAT_DXT1) data_size = block_w * block_h * 8;
         else data_size = header.pitch;
         
         header.levels = 1;
@@ -763,7 +765,7 @@ int makeDDS(char * path) {
     if (header.width != header.height) header.levels = 1;
 
     printf("Format %02X, Size %dx%d depth %d, pitch %d, mipmaps: %d\n",
-        xpr_color, header.width, header.height, header.depth, header.pitch, header.levels);
+        xpr_format, header.width, header.height, header.depth, header.pitch, header.levels);
 
 
     if (header.levels > 1) header.flags |= 0x20000; // Mipmaps are present
@@ -773,7 +775,7 @@ int makeDDS(char * path) {
     fwrite(&header, sizeof(struct dds_header), 1, dds);
     fseek(xpr, file_start, SEEK_SET);
     
-    if (xpr_color == FORMAT_DXT1) {
+    if (xpr_format == FORMAT_DXT1) {
         // Convert to DXT3
         struct dxt3_block block;
         for (uint32_t pos = 0; pos < data_size; pos += sizeof(struct dxt1_block)) {
@@ -798,6 +800,23 @@ int makeDDS(char * path) {
             
             fwrite(&block, sizeof(struct dxt3_block), 1, dds);
         }
+    } else if (xpr_format == FORMAT_ARGB) {
+        uint32_t texture_size = header.width * header.height * 4;
+        // Unswizzle data
+        uint8_t * xpr_texture = malloc(texture_size);
+        uint8_t * dds_texture = malloc(texture_size);
+        
+        fread(xpr_texture, sizeof(uint8_t), texture_size, xpr);
+        
+        unswizzle_rect(
+            xpr_texture, header.width, header.height,
+            dds_texture, header.width * 4, 4
+        );
+        
+        fwrite(dds_texture, sizeof(uint8_t), texture_size, dds);
+        
+        free(xpr_texture);
+        free(dds_texture);
     } else {
         // Copy data
         for (uint32_t pos = 0; pos < data_size; pos++) {
