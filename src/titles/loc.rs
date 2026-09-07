@@ -1366,6 +1366,7 @@ pub fn unpack(
             // Switches
             let switch_error_color = U8Vec4::new(0xFF, 0x50, 0x00, 0xFF);
             let switch_primary_color = U8Vec4::new(0x00, 0xFF, 0xAA, 0xFF);
+            let switch_splits: [f32; 2] = [0.75, 1.0];
 
             let switch_progress_vertices: [Vec2; 80];
             let switch_success_vertices: [UVec2; 15];
@@ -1384,7 +1385,19 @@ pub fn unpack(
                 switch_progress_vertices = {
                     let mut components: [f32; 160] = [0.0; _];
                     LittleEndian::read_f32_into(&stack[36..676], &mut components);
-                    core::array::from_fn(|i| Vec2::from_slice(&components[i * 2..i * 2 + 2]))
+                    let mut verts =
+                        core::array::from_fn(|i| Vec2::from_slice(&components[i * 2..i * 2 + 2]));
+
+                    for g in 0..2 {
+                        let gen_verts = &mut verts[g * 20..];
+                        for i in 0..5 {
+                            let i2 = i * 2;
+                            gen_verts[i2 + 1].x = gen_verts[i2].x;
+                            gen_verts[i2 + 10].x = gen_verts[i2 + 11].x;
+                        }
+                    }
+
+                    verts
                 };
                 //println!("{:?}", switch_progress_vertices);
 
@@ -1465,7 +1478,7 @@ pub fn unpack(
                 for m in 0..6 {
                     let os_idx = m * 6 + g * 2;
 
-                    build_path.push(format! {"Ignition_{}.boot_anim", m});
+                    build_path.push(format! {"Bootup_{}.boot_anim", m});
                     os_list[os_idx].export(
                         &build_path,
                         &font_path,
@@ -1476,7 +1489,7 @@ pub fn unpack(
                     )?;
                     build_path.pop();
 
-                    build_path.push(format! {"Activation_{}.boot_anim", m});
+                    build_path.push(format! {"Systems_{}.boot_anim", m});
                     os_list[os_idx + 1].export(
                         &build_path,
                         &font_path,
@@ -1494,11 +1507,14 @@ pub fn unpack(
                     let progress_vertices = &switch_progress_vertices[g * 20..]; // 4 vertices for the quad
                     let success_vertices = &switch_success_vertices[g * 5..g * 5 + 5]; // 1 vertex for the position
 
-                    build_path.push("Systems.boot_systems");
+                    build_path.push("Switches.boot_switches");
                     let file = File::create(&build_path)?;
                     build_path.pop();
 
                     let mut writer = BufWriter::new(file);
+
+                    write_godot_path(&font_path, &mut writer)?;
+
                     writer.write_u32::<LittleEndian>(5)?; // System count
 
                     writer.write_all(switch_error_color.to_array().as_slice())?;
@@ -1512,6 +1528,14 @@ pub fn unpack(
                     let switch_quad_count: usize = if g == 2 { 2 } else { 1 };
                     writer.write_u32::<LittleEndian>(switch_quad_count as u32)?; // Quads per switch
 
+                    // Write quad splits
+                    for &split in switch_splits
+                        .iter()
+                        .skip(switch_splits.len() - switch_quad_count)
+                    {
+                        writer.write_f32::<LittleEndian>(split)?;
+                    }
+
                     for v in progress_vertices[..switch_quad_count * 20].iter() {
                         writer.write_f32::<LittleEndian>(v.x)?;
                         writer.write_f32::<LittleEndian>(v.y)?;
@@ -1523,17 +1547,27 @@ pub fn unpack(
                         writer.write_f32::<LittleEndian>(v.x as f32)?;
                         writer.write_f32::<LittleEndian>(v.y as f32)?;
                     }
+                }
+
+                {
+                    build_path.push("Start.boot_start");
+                    let file = File::create(&build_path)?;
+                    build_path.pop();
+
+                    let mut writer = BufWriter::new(file);
+                    writer.write_u32::<LittleEndian>(5)?; // System count
 
                     // Startup
                     let startup_vertices = &startup_progress_vertices[g * 5..g * 5 + 5]; // 1 vertex for the position
 
-                    writer.write_u32::<LittleEndian>(switch_quad_count as u32)?; // Quads per switch
+                    let startup_quad_count: usize = if g == 2 { 2 } else { 1 };
+                    writer.write_u32::<LittleEndian>(startup_quad_count as u32)?; // Quads per switch
                     for v in startup_vertices.iter() {
                         writer.write_f32::<LittleEndian>(v.x as f32)?;
                         writer.write_f32::<LittleEndian>(v.y as f32)?;
                     }
-                    if switch_quad_count == 2 {
-                        for v in startup_vertices.iter() {
+                    if startup_quad_count == 2 {
+                        for v in startup_vertices.iter().rev() {
                             writer.write_f32::<LittleEndian>(v.x as f32 + 403.0)?;
                             writer.write_f32::<LittleEndian>(v.y as f32)?;
                         }
