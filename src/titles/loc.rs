@@ -3,6 +3,7 @@ pub mod mech;
 pub mod wep;
 
 use std::collections::BTreeMap;
+use std::ffi::CString;
 use std::fs;
 use std::fs::File;
 use std::fs::create_dir;
@@ -47,8 +48,8 @@ use wep::{ProjectileCollider, Weapon, WeaponEffects, WeaponFile, WeaponType};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use glam::f32::Vec3A as Vec3;
-use glam::{U8Vec4, UVec2, Vec2, Vec4Swizzles}; // Vec3A is 16-bytes so that it can function with SIMD
+use glam::f32::Vec3A as Vec3; // Vec3A is 16-bytes so that it can function with SIMD
+use glam::{U8Vec4, UVec2, Vec2, Vec4Swizzles};
 
 pub const TITLE_PREFIX: &str = "loc";
 pub const TITLE_ID: u32 = 0x43430009;
@@ -1435,6 +1436,38 @@ pub fn unpack(
                 };
             }
 
+            let startup_work_rate_positions: [Vec2; 3] = [
+                Vec2::new(382.0, 379.0),
+                Vec2::new(365.0, 370.0),
+                Vec2::new(225.0, 322.0),
+            ];
+
+            let startup_completion_positions: [Vec2; 3] =
+                [Vec2::ZERO, Vec2::new(428.0, 369.0), Vec2::new(256.0, 325.0)];
+
+            let mut gen1_startup_strings: Vec<(String, Vec2)> = Vec::with_capacity(3);
+            {
+                for offset in [0x60F43, 0x60F62, 0x60F80] {
+                    xbe.seek_section_offset(".text", offset)?;
+                    let pos_y = xbe.reader.read_f32::<LittleEndian>()?;
+
+                    xbe.reader.seek_relative(1)?;
+                    let pos_x = xbe.reader.read_f32::<LittleEndian>()?;
+
+                    xbe.reader.seek_relative(1)?;
+                    let string_pointer = xbe.reader.read_u32::<LittleEndian>()?;
+
+                    xbe.seek_pointer_offset(string_pointer)?;
+                    let mut string_bytes: Vec<u8> = Vec::with_capacity(16);
+                    xbe.reader.read_until(0, &mut string_bytes)?;
+
+                    let cstr = CString::from_vec_with_nul(string_bytes)?;
+                    let string = cstr.into_string()?;
+
+                    gen1_startup_strings.push((string, Vec2::new(pos_x, pos_y)));
+                }
+            }
+
             game_path.push("OS.os");
             let os_list = OS::import_bin(&game_path, GAME_FPS)?;
             game_path.pop();
@@ -1549,12 +1582,81 @@ pub fn unpack(
                     }
                 }
 
+                // Startup screen
+                let start_lines_path;
+                {
+                    let (sl_offset, sl_count) = startup_lines_offsets[g];
+                    let startup_lines = Line::import_linesdefs(xbe, ".data", sl_offset, sl_count)?;
+
+                    build_path.push("start.lines");
+                    start_lines_path = diff_paths(&build_path, godot_base_path).unwrap();
+                    Line::export_linesdefs(&startup_lines, &build_path)?;
+                    build_path.pop();
+                }
+
+                let start_sprites_path;
+                {
+                    let (spr_offset, spr_count) = startup_sprites_offsets[g];
+                    let sprites = OSSprite::import_multiple(
+                        xbe,
+                        ".data",
+                        spr_offset,
+                        spr_count,
+                        boot_color_pointers.as_slice(),
+                    )?;
+
+                    build_path.push("start.sprites");
+                    start_sprites_path = diff_paths(&build_path, godot_base_path).unwrap();
+                    OSSprite::export_multiple(
+                        &build_path,
+                        sprites.as_slice(),
+                        get_ui_spritesheet_path,
+                    )?;
+                    build_path.pop();
+                }
+
                 {
                     build_path.push("Start.boot_start");
                     let file = File::create(&build_path)?;
                     build_path.pop();
 
                     let mut writer = BufWriter::new(file);
+                    write_godot_path(&font_path, &mut writer)?;
+                    write_godot_path(&start_lines_path, &mut writer)?;
+                    write_godot_path(&start_sprites_path, &mut writer)?;
+
+                    writer.write_f32::<LittleEndian>(2.0)?; // Activation duration
+
+                    writer.write_u8(2)?; // Progress linesdef index index
+
+                    writer.write_u8(if g == 0 { u8::MAX } else { 1 })?; // Completion linesdef index index
+
+                    writer.write_u8(5)?; // Progress sprite work
+                    writer.write_u8(if g == 1 { 11 } else { 10 })?; // Progress sprite done
+
+                    // String count
+                    writer.write_u32::<LittleEndian>(if g == 0 {
+                        gen1_startup_strings.len() as u32 + 1
+                    } else {
+                        1
+                    })?;
+
+                    // Encode the work rate position as an empty string
+                    write_pascal_string("", &mut writer)?;
+                    writer.write_f32::<LittleEndian>(startup_work_rate_positions[g].x)?;
+                    writer.write_f32::<LittleEndian>(startup_work_rate_positions[g].y)?;
+
+                    if g == 0 {
+                        for (str, pos) in gen1_startup_strings.iter() {
+                            write_pascal_string(str, &mut writer)?;
+                            writer.write_f32::<LittleEndian>(pos.x)?;
+                            writer.write_f32::<LittleEndian>(pos.y)?;
+                        }
+                    }
+
+                    writer.write_f32::<LittleEndian>(startup_completion_positions[g].x)?;
+                    writer.write_f32::<LittleEndian>(startup_completion_positions[g].y)?;
+
                     writer.write_u32::<LittleEndian>(5)?; // System count
 
                     // Startup
@@ -1567,40 +1669,11 @@ pub fn unpack(
                         writer.write_f32::<LittleEndian>(v.y as f32)?;
                     }
                     if startup_quad_count == 2 {
-                        for v in startup_vertices.iter().rev() {
+                        for v in startup_vertices.iter() {
                             writer.write_f32::<LittleEndian>(v.x as f32 + 403.0)?;
                             writer.write_f32::<LittleEndian>(v.y as f32)?;
                         }
                     }
-                }
-
-                // Startup screen
-                {
-                    let (sl_offset, sl_count) = startup_lines_offsets[g];
-                    let startup_lines = Line::import_linesdefs(xbe, ".data", sl_offset, sl_count)?;
-
-                    build_path.push("start.lines");
-                    Line::export_linesdefs(&startup_lines, &build_path)?;
-                    build_path.pop();
-                }
-
-                {
-                    let (spr_offset, spr_count) = startup_sprites_offsets[g];
-                    let sprites = OSSprite::import_multiple(
-                        xbe,
-                        ".data",
-                        spr_offset,
-                        spr_count,
-                        boot_color_pointers.as_slice(),
-                    )?;
-
-                    build_path.push("start.sprites");
-                    OSSprite::export_multiple(
-                        &build_path,
-                        sprites.as_slice(),
-                        get_ui_spritesheet_path,
-                    )?;
-                    build_path.pop();
                 }
 
                 build_path.pop(); // Exit os/gen# directory
